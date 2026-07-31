@@ -3,7 +3,7 @@ import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, map, tap } from 'rxjs';
 import { environment } from 'src/environments/environment';
-import { LoginResponse, UsuarioSesion } from '../models/usuario-sesion.model';
+import { LoginResponse, UserSession } from '../models/user-session.model';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -11,16 +11,16 @@ export class AuthService {
     // la pagina a proposito, ver docs/decisions/arquitectura-decisiones.md §7.
     private token: string | null = null;
 
-    private currentUserSubject = new BehaviorSubject<UsuarioSesion | null>(null);
+    private currentUserSubject = new BehaviorSubject<UserSession | null>(null);
     currentUser$ = this.currentUserSubject.asObservable();
 
     constructor(private http: HttpClient, private router: Router) {}
 
-    login(correo: string, password: string): Observable<void> {
-        return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/login`, { correo, password }).pipe(
+    login(email: string, password: string): Observable<void> {
+        return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/login`, { email, password }).pipe(
             tap((response) => {
                 this.token = response.token;
-                this.currentUserSubject.next({ nombre: response.nombre, correo: response.correo });
+                this.currentUserSubject.next({ name: response.name, email: response.email });
             }),
             map(() => void 0)
         );
