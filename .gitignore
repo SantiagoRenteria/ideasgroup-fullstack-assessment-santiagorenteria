@@ -1,0 +1,24 @@
+# Enunciado — confidencial, nunca se publica (sección 12 del enunciado)
+docs/enunciado/
+*.pdf
+
+# Secrets / entorno real
+.env
+**/appsettings.Development.json
+**/appsettings.Local.json
+
+# .NET
+bin/
+obj/
+*.user
+
+# Angular / Node
+node_modules/
+dist/
+.angular/
+
+# IDE / OS
+.vs/
+.vscode/
+.idea/
+.DS_Store
