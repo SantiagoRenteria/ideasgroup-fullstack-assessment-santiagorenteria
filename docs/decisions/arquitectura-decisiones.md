@@ -234,3 +234,20 @@ Nota de transparencia: `LoginCommand` no escribe nada en la base de datos actual
 ### 11.6 Minimal API de autenticación
 
 `POST /api/auth/login` vive en `Endpoints/AuthEndpoints.cs` (`MapAuthEndpoints`), consistente con la decisión de la sección 3. El DTO de request (`LoginRequest`) es propio de la capa API — no se reutiliza `LoginCommand` de Application directamente en el contrato HTTP, para no acoplar el shape de la API a la forma interna del caso de uso.
+
+---
+
+## 12. Idioma del código — revisión de la decisión inicial (Fase 2)
+
+**Decisión superada** (no se borra, se documenta el cambio — regla de este archivo): `docs/METODOLOGIA.md` §7.3 establecía originalmente "dominio y nombres de negocio en español (Proyecto, Columna, Tarea — como en el enunciado); nombres técnicos genéricos en inglés". Bajo esa regla, Fase 1 se implementó con `Usuario`, `Correo`, `Nombre`, tabla `usuarios`.
+
+**Decisión nueva (2026-07-31):** todo identificador de código pasa a inglés (`User`, `Project`, `Column`, `Task`, `Email`, `Name`...). Los mensajes de validación/error orientados al usuario y toda la documentación del proyecto se mantienen en español.
+
+**Por qué se revierte:**
+- El enunciado usa "Proyecto/Columna/Tarea" para describir el dominio de negocio en la sección que lo redacta, no como una exigencia de que los identificadores de código repliquen ese idioma — es una lectura, no un requisito literal como sí lo es el stack tecnológico (sección 4).
+- Mezclar idiomas dentro del mismo código (`Usuario` en Fase 1 conviviendo con `Project`/`Column` en Fase 2 si no se corrige) es más difícil de defender en la sustentación que una convención uniforme — un evaluador senior lo marca como inconsistencia de criterio, no como decisión de diseño.
+- Inglés en identificadores es el estándar de facto en .NET/Angular; reduce fricción si el código se reutiliza o revisa fuera de un contexto hispanohablante.
+
+**Alternativa descartada:** mantener el dominio en español solo por fidelidad literal al enunciado, aceptando la mezcla de idiomas. Se descarta porque el enunciado (sección 9) exige justificar decisiones, y "porque el PDF usa esas palabras" no es una justificación técnica defendible frente a la inconsistencia que genera.
+
+**Retrofit de Fase 0-1:** `Usuario` → `User`, `Correo` → `Email`, `Nombre` → `Name`, tabla `usuarios` → `users`, columnas `correo`/`nombre` → `email`/`name`, `LoginCommand(string Correo, string Password)` → `LoginCommand(string Email, string Password)`. Requiere regenerar la migración `InitialCreate` (aún no hay datos reales en ningún entorno del evaluador, así que no hay migración de datos que preservar) y actualizar el frontend (`UsuarioSesion`, campo `correo` en los modelos de auth). Se ejecuta como rama `fix/rename-domain-to-english` con PR propio, separada de `feature/projects-columns` (Fase 2), para no mezclar un renombrado mecánico con funcionalidad nueva en el mismo commit.
