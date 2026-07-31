@@ -20,16 +20,16 @@ public class JwtTokenGeneratorTests
     public void Generate_IncluyeClaimsEIssuerAudienceCorrectos()
     {
         var generator = new JwtTokenGenerator(Options.Create(_options));
-        var usuario = new Usuario(Guid.NewGuid(), "Ana Perez", "ana@ideasgroup.test", "hash-irrelevante");
+        var user = new User(Guid.NewGuid(), "Ana Perez", "ana@ideasgroup.test", "hash-irrelevante");
 
-        var token = generator.Generate(usuario);
+        var token = generator.Generate(user);
 
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token.Value);
 
         Assert.Equal(_options.Issuer, jwt.Issuer);
         Assert.Equal(_options.Audience, jwt.Audiences.Single());
-        Assert.Equal(usuario.Id.ToString(), jwt.Claims.Single(c => c.Type == JwtRegisteredClaimNames.Sub).Value);
-        Assert.Equal(usuario.Correo, jwt.Claims.Single(c => c.Type == JwtRegisteredClaimNames.Email).Value);
+        Assert.Equal(user.Id.ToString(), jwt.Claims.Single(c => c.Type == JwtRegisteredClaimNames.Sub).Value);
+        Assert.Equal(user.Email, jwt.Claims.Single(c => c.Type == JwtRegisteredClaimNames.Email).Value);
         Assert.True(token.ExpiresAtUtc > DateTime.UtcNow);
     }
 }
