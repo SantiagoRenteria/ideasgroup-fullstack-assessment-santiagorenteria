@@ -1,5 +1,7 @@
 import { Component } from '@angular/core';
+import { Router } from '@angular/router';
 import { LayoutService } from 'src/app/layout/service/app.layout.service';
+import { AuthService } from 'src/app/core/services/auth.service';
 
 @Component({
     selector: 'app-login',
@@ -15,9 +17,26 @@ import { LayoutService } from 'src/app/layout/service/app.layout.service';
 })
 export class LoginComponent {
 
-    valCheck: string[] = ['remember'];
+    correo = '';
+    password = '';
+    cargando = false;
+    error: string | null = null;
 
-    password!: string;
+    constructor(public layoutService: LayoutService, private authService: AuthService, private router: Router) { }
 
-    constructor(public layoutService: LayoutService) { }
+    onSubmit(): void {
+        this.error = null;
+        this.cargando = true;
+
+        this.authService.login(this.correo, this.password).subscribe({
+            next: () => {
+                this.cargando = false;
+                this.router.navigate(['/']);
+            },
+            error: () => {
+                this.cargando = false;
+                this.error = 'Correo o contraseña incorrectos.';
+            }
+        });
+    }
 }
