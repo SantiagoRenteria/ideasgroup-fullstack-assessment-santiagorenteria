@@ -5,17 +5,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GestionProyectos.Infrastructure.Repositories;
 
-public class UsuarioRepository : IUsuarioRepository
+public class UserRepository : IUserRepository
 {
     private readonly AppDbContext _dbContext;
 
-    public UsuarioRepository(AppDbContext dbContext)
+    public UserRepository(AppDbContext dbContext)
     {
         _dbContext = dbContext;
     }
 
-    public Task<Usuario?> GetByCorreoAsync(string correo, CancellationToken cancellationToken) =>
-        _dbContext.Usuarios
+    public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) =>
+        _dbContext.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Correo == correo, cancellationToken);
+            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
 }

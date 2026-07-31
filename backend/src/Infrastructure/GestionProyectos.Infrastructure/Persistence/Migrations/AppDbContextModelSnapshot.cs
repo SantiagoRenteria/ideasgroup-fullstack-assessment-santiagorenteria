@@ -22,23 +22,23 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("GestionProyectos.Domain.Entities.Usuario", b =>
+            modelBuilder.Entity("GestionProyectos.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Correo")
+                    b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(320)
                         .HasColumnType("character varying(320)")
-                        .HasColumnName("correo");
+                        .HasColumnName("email");
 
-                    b.Property<string>("Nombre")
+                    b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
-                        .HasColumnName("nombre");
+                        .HasColumnName("name");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -47,25 +47,25 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Correo")
+                    b.HasIndex("Email")
                         .IsUnique()
-                        .HasDatabaseName("ix_usuarios_correo");
+                        .HasDatabaseName("ix_users_email");
 
-                    b.ToTable("usuarios", (string)null);
+                    b.ToTable("users", (string)null);
 
                     b.HasData(
                         new
                         {
                             Id = new Guid("6f9b1c2e-1a2b-4c3d-8e4f-000000000001"),
-                            Correo = "admin@ideasgroup.test",
-                            Nombre = "Administrador",
+                            Email = "admin@ideasgroup.test",
+                            Name = "Administrador",
                             PasswordHash = "$2a$11$YJ0PQ4j9uGPeu.c0KarD3.nWP8.o7KjhuJ8P/W6JxT4vXAKvumGhu"
                         },
                         new
                         {
                             Id = new Guid("6f9b1c2e-1a2b-4c3d-8e4f-000000000002"),
-                            Correo = "evaluador@ideasgroup.test",
-                            Nombre = "Evaluador",
+                            Email = "evaluador@ideasgroup.test",
+                            Name = "Evaluador",
                             PasswordHash = "$2a$11$YJ0PQ4j9uGPeu.c0KarD3.nWP8.o7KjhuJ8P/W6JxT4vXAKvumGhu"
                         });
                 });

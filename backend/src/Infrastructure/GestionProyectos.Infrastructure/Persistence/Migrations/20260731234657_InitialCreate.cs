@@ -14,22 +14,22 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "usuarios",
+                name: "users",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    nombre = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    correo = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: false),
+                    name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    email = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: false),
                     password_hash = table.Column<string>(type: "text", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_usuarios", x => x.Id);
+                    table.PrimaryKey("PK_users", x => x.Id);
                 });
 
             migrationBuilder.InsertData(
-                table: "usuarios",
-                columns: new[] { "Id", "correo", "nombre", "password_hash" },
+                table: "users",
+                columns: new[] { "Id", "email", "name", "password_hash" },
                 values: new object[,]
                 {
                     { new Guid("6f9b1c2e-1a2b-4c3d-8e4f-000000000001"), "admin@ideasgroup.test", "Administrador", "$2a$11$YJ0PQ4j9uGPeu.c0KarD3.nWP8.o7KjhuJ8P/W6JxT4vXAKvumGhu" },
@@ -37,9 +37,9 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "ix_usuarios_correo",
-                table: "usuarios",
-                column: "correo",
+                name: "ix_users_email",
+                table: "users",
+                column: "email",
                 unique: true);
         }
 
@@ -47,7 +47,7 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "usuarios");
+                name: "users");
         }
     }
 }

@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace GestionProyectos.Infrastructure.Persistence.Configurations;
 
-public class UsuarioConfiguration : IEntityTypeConfiguration<Usuario>
+public class UserConfiguration : IEntityTypeConfiguration<User>
 {
     // Hash BCrypt de "IdeasGroup2026!" pre-pimentado (HMACSHA256) con el pepper por defecto
     // de .env.example (PASSWORD_PEPPER). Si cambias PASSWORD_PEPPER en un entorno donde ya
@@ -13,19 +13,19 @@ public class UsuarioConfiguration : IEntityTypeConfiguration<Usuario>
     // migracion. Documentado tambien en el README.
     private const string SeedPasswordHash = "$2a$11$YJ0PQ4j9uGPeu.c0KarD3.nWP8.o7KjhuJ8P/W6JxT4vXAKvumGhu";
 
-    public void Configure(EntityTypeBuilder<Usuario> builder)
+    public void Configure(EntityTypeBuilder<User> builder)
     {
-        builder.ToTable("usuarios");
+        builder.ToTable("users");
 
         builder.HasKey(u => u.Id);
 
-        builder.Property(u => u.Nombre)
-            .HasColumnName("nombre")
+        builder.Property(u => u.Name)
+            .HasColumnName("name")
             .HasMaxLength(200)
             .IsRequired();
 
-        builder.Property(u => u.Correo)
-            .HasColumnName("correo")
+        builder.Property(u => u.Email)
+            .HasColumnName("email")
             .HasMaxLength(320)
             .IsRequired();
 
@@ -33,17 +33,17 @@ public class UsuarioConfiguration : IEntityTypeConfiguration<Usuario>
             .HasColumnName("password_hash")
             .IsRequired();
 
-        builder.HasIndex(u => u.Correo)
+        builder.HasIndex(u => u.Email)
             .IsUnique()
-            .HasDatabaseName("ix_usuarios_correo");
+            .HasDatabaseName("ix_users_email");
 
         builder.HasData(
-            new Usuario(
+            new User(
                 Guid.Parse("6f9b1c2e-1a2b-4c3d-8e4f-000000000001"),
                 "Administrador",
                 "admin@ideasgroup.test",
                 SeedPasswordHash),
-            new Usuario(
+            new User(
                 Guid.Parse("6f9b1c2e-1a2b-4c3d-8e4f-000000000002"),
                 "Evaluador",
                 "evaluador@ideasgroup.test",
