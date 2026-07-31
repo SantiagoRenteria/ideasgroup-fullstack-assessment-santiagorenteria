@@ -17,24 +17,24 @@ import { AuthService } from 'src/app/core/services/auth.service';
 })
 export class LoginComponent {
 
-    correo = '';
+    email = '';
     password = '';
-    cargando = false;
+    loading = false;
     error: string | null = null;
 
     constructor(public layoutService: LayoutService, private authService: AuthService, private router: Router) { }
 
     onSubmit(): void {
         this.error = null;
-        this.cargando = true;
+        this.loading = true;
 
-        this.authService.login(this.correo, this.password).subscribe({
+        this.authService.login(this.email, this.password).subscribe({
             next: () => {
-                this.cargando = false;
+                this.loading = false;
                 this.router.navigate(['/']);
             },
             error: () => {
-                this.cargando = false;
+                this.loading = false;
                 this.error = 'Correo o contraseña incorrectos.';
             }
         });

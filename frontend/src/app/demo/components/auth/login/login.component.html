@@ -10,14 +10,14 @@
 
                 <form (ngSubmit)="onSubmit()">
                     <label for="email1" class="block text-900 text-xl font-medium mb-2">Correo</label>
-                    <input id="email1" type="text" name="correo" placeholder="Correo electrónico" pInputText class="w-full md:w-30rem mb-5" style="padding:1rem" [(ngModel)]="correo">
+                    <input id="email1" type="text" name="email" placeholder="Correo electrónico" pInputText class="w-full md:w-30rem mb-5" style="padding:1rem" [(ngModel)]="email">
 
                     <label for="password1" class="block text-900 font-medium text-xl mb-2">Contraseña</label>
                     <p-password id="password1" name="password" [(ngModel)]="password" placeholder="Contraseña" [toggleMask]="true" [feedback]="false" styleClass="mb-3" inputStyleClass="w-full p-3 md:w-30rem"></p-password>
 
                     <small class="p-error block mb-3" *ngIf="error">{{ error }}</small>
 
-                    <button pButton pRipple type="submit" label="Ingresar" class="w-full p-3 text-xl" [loading]="cargando"></button>
+                    <button pButton pRipple type="submit" label="Ingresar" class="w-full p-3 text-xl" [loading]="loading"></button>
                 </form>
             </div>
         </div>
