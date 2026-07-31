@@ -79,6 +79,8 @@ feature/tests-docs          # Fase 6
 
 Una rama = un objetivo = una fase del plan (`docs/fases-implementacion.md`). No se abren ramas para "arreglos rápidos" sueltos — esos van como commits adicionales dentro de la rama activa o, si son post-merge, `fix/<descripcion>`.
 
+> **Nota de transparencia:** las Fases 0 y 1 se desarrollaron con commits directos a `main`, sin rama `feature/*` ni PR — un descuido de proceso detectado al revisar el trabajo, no una decisión consciente. No se reescribió el historial ya pusheado para corregirlo (regla de la sección 4.2) ni se simularon ramas/PR retroactivos sobre commits ya fusionados, porque un PR sin commits reales que fusionar habría sido cosmético, no autogestión real. El flujo rama+PR descrito aquí se aplica de forma estricta desde la Fase 2 en adelante.
+
 ### 4.2 Commits — Conventional Commits
 
 ```
