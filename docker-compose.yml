@@ -26,6 +26,7 @@ services:
       Jwt__Issuer: ${JWT_ISSUER}
       Jwt__Audience: ${JWT_AUDIENCE}
       Jwt__ExpirationMinutes: ${JWT_EXPIRATION_MINUTES}
+      Security__Pepper: ${PASSWORD_PEPPER}
       Cors__AllowedOrigin: ${CORS_ALLOWED_ORIGIN}
     ports:
       - "${API_PORT}:8080"
