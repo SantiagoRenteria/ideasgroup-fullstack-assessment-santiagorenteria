@@ -215,6 +215,12 @@ Claims: `sub` (Id de usuario), `email`, `name`, `jti` (identificador único del 
 
 `LoginCommandHandler` devuelve `Result<LoginResponseDto>.Failure(...)` para credenciales inválidas — mapeado explícitamente a 401 en el endpoint. El mensaje es genérico ("Correo o contraseña incorrectos") para no revelar si el correo existe (evita enumeración de usuarios). En cambio, `FluentValidation` (formato de correo vacío/inválido) lanza `ValidationException`, capturada por un middleware global (`app.UseExceptionHandler`) que la traduce a 400. La distinción es deliberada: el Result Pattern es para reglas de negocio previsibles por handler; los errores de formato de entrada son estructurales y se resuelven una sola vez, de forma centralizada.
 
-### 11.5 Minimal API de autenticación
+### 11.5 ICommand/IQuery explícitos
+
+MediatR no distingue Command de Query a nivel de tipos — ambos son `IRequest<TResponse>`. Para que la separación de CQRS declarada en la sección 3 sea verificable por el compilador y no solo por convención de nombres, se agregaron `ICommand<TResponse>` e `IQuery<TResponse>` (ambas heredan de `IRequest<TResponse>`) en `Application/Common/Messaging`. `LoginCommand` implementa `ICommand<Result<LoginResponseDto>>`.
+
+Nota de transparencia: `LoginCommand` no escribe nada en la base de datos actualmente (no actualiza último login ni crea un registro de sesión), así que un purista de CQRS lo modelaria como Query. Se mantiene como Command porque representa una accion de seguridad auditable y porque es previsible que en Fase 7 (bloqueo de cuenta / rate limiting) empiece a tener efectos de escritura — cambiar su forma en ese momento seria mas costoso que anticiparla ahora. Es una decision discutible, documentada aqui a proposito para poder defenderla o revisarla en la sustentacion.
+
+### 11.6 Minimal API de autenticación
 
 `POST /api/auth/login` vive en `Endpoints/AuthEndpoints.cs` (`MapAuthEndpoints`), consistente con la decisión de la sección 3. El DTO de request (`LoginRequest`) es propio de la capa API — no se reutiliza `LoginCommand` de Application directamente en el contrato HTTP, para no acoplar el shape de la API a la forma interna del caso de uso.
