@@ -2,6 +2,9 @@
 docs/enunciado/
 *.pdf
 
+# Contrato de comportamiento de la IA — uso local, no se publica en el repo
+CLAUDE.md
+
 # Secrets / entorno real
 .env
 **/appsettings.Development.json

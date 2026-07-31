@@ -139,9 +139,9 @@ Una **issue de GitHub por funcionalidad del enunciado**, mapeada 1:1 a las secci
 
 ```
 /
-├── CLAUDE.md                          # contrato de comportamiento de la IA
+├── CLAUDE.md                          # contrato de comportamiento de la IA — local, no versionado (ver .gitignore)
 ├── README.md                          # entregable oficial (sección 8 del enunciado)
-├── .gitignore                         # excluye el PDF del enunciado y secretos
+├── .gitignore                         # excluye el PDF del enunciado, CLAUDE.md y secretos
 ├── .env.example
 └── docs/
     ├── METODOLOGIA.md                 # este documento
