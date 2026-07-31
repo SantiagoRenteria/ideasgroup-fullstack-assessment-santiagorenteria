@@ -11,7 +11,7 @@
 | Componente | Tecnología | Nota |
 |---|---|---|
 | Backend | .NET 8, C# | Versión exigida explícitamente en secciones 4 y 6.1 del enunciado |
-| API | Minimal API o Controllers | A definir en implementación |
+| API | Minimal API | Endpoints agrupados por feature en métodos de extensión (`MapProyectoEndpoints(app)`), no controllers. Encaja con CQRS/MediatR ya elegido: cada endpoint reenvía al mediator sin una clase intermedia que solo delega. Decidido en Fase 0 (ver commit de cimientos del backend) |
 | ORM | Entity Framework Core | Migraciones incrementales |
 | Base de datos | PostgreSQL | — |
 | Tiempo real | SignalR | Grupos por `boardId`/`proyectoId` |
