@@ -170,6 +170,16 @@ El endpoint resuelve por inyección de `IEnumerable<IReportExporter>`, nunca por
 - Sanitización de contenido de usuario en Angular (evitar `[innerHTML]` sin sanitizar en descripciones de tarea).
 - Hash de contraseña con salt + pepper (algoritmo lento tipo BCrypt/Argon2, no SHA256 puro).
 
+### 8.1 TLS/HTTPS — deliberadamente no implementado
+
+Todo el stack corre en HTTP plano (`localhost:4200`, `localhost:5000`): no hay terminación TLS en nginx ni certificado en ningún punto. Es una decisión de alcance consciente, no una omisión:
+
+- El enunciado (secciones 4 y 6.1) no exige HTTPS en ningún punto.
+- La sección 12 aclara que el ejercicio es exclusivamente evaluativo, sin destino productivo — no hay tráfico real que proteger.
+- Añadir un certificado autofirmado en nginx introduce un punto de fallo adicional en el arranque limpio que exige la sección 12 (`docker compose up` sin pasos manuales), y una advertencia de "certificado no confiable" en el navegador del evaluador que no aporta señal real sobre la calidad del código.
+
+Esto **no es lo mismo** que "la contraseña viaja insegura por diseño": en un despliegue real, la protección en tránsito la da TLS (terminado en nginx, ya que es el punto único de entrada de la sección 1), nunca ofuscar o hashear la contraseña en el cliente antes de enviarla — eso convertiría el hash en la credencial real y sería *peor* que enviar la contraseña en texto plano sobre un canal cifrado (ataque tipo "pass-the-hash"). Si este proyecto pasara a producción, TLS en nginx sería el primer cambio de infraestructura, no un rediseño del flujo de login.
+
 ---
 
 ## 9. Otros Detalles No Exigidos pero Relevantes
