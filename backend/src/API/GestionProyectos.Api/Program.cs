@@ -4,6 +4,7 @@ using GestionProyectos.Application;
 using GestionProyectos.Infrastructure;
 using GestionProyectos.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -36,6 +37,15 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
     {
         context.Response.StatusCode = StatusCodes.Status400BadRequest;
         await context.Response.WriteAsJsonAsync(new { error = validationException.Message });
+        return;
+    }
+
+    // Cuerpo de la peticion ausente o mal formado (JSON invalido, Content-Type incorrecto,
+    // etc.): es un error del cliente, no del servidor.
+    if (exception is BadHttpRequestException)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new { error = "El cuerpo de la petición es inválido o está vacío." });
         return;
     }
 
