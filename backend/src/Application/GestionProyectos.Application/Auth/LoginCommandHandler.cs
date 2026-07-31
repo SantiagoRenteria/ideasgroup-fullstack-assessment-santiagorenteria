@@ -6,36 +6,36 @@ namespace GestionProyectos.Application.Auth;
 
 public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<LoginResponseDto>>
 {
-    private const string CredencialesInvalidas = "Correo o contraseña incorrectos.";
+    private const string InvalidCredentials = "Correo o contraseña incorrectos.";
 
-    private readonly IUsuarioRepository _usuarioRepository;
+    private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
 
     public LoginCommandHandler(
-        IUsuarioRepository usuarioRepository,
+        IUserRepository userRepository,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator)
     {
-        _usuarioRepository = usuarioRepository;
+        _userRepository = userRepository;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
     }
 
     public async Task<Result<LoginResponseDto>> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
-        var correo = request.Correo.Trim().ToLowerInvariant();
-        var usuario = await _usuarioRepository.GetByCorreoAsync(correo, cancellationToken);
+        var email = request.Email.Trim().ToLowerInvariant();
+        var user = await _userRepository.GetByEmailAsync(email, cancellationToken);
 
-        if (usuario is null || !_passwordHasher.Verify(request.Password, usuario.PasswordHash))
+        if (user is null || !_passwordHasher.Verify(request.Password, user.PasswordHash))
         {
             // Mensaje generico deliberado: no revelar si el correo existe (evita enumeracion de usuarios).
-            return Result<LoginResponseDto>.Failure(CredencialesInvalidas);
+            return Result<LoginResponseDto>.Failure(InvalidCredentials);
         }
 
-        var token = _jwtTokenGenerator.Generate(usuario);
+        var token = _jwtTokenGenerator.Generate(user);
 
         return Result<LoginResponseDto>.Success(
-            new LoginResponseDto(token.Value, token.ExpiresAtUtc, usuario.Nombre, usuario.Correo));
+            new LoginResponseDto(token.Value, token.ExpiresAtUtc, user.Name, user.Email));
     }
 }

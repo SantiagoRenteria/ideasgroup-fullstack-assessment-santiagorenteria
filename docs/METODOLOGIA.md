@@ -171,16 +171,16 @@ Vive localmente, fuera de control de versiones (regla de confidencialidad, secci
 
 | Elemento | Convención | Ejemplo |
 |---|---|---|
-| Clases | PascalCase singular | `TareaEntity`, `ProyectoRepository` |
-| Interfaces (puertos) | `I` + PascalCase | `ITareaRepository`, `IReportExporter` |
-| Commands | `{Accion}{Entidad}Command` | `CrearProyectoCommand`, `MoverTareaCommand` |
-| Queries | `Get{Entidad}Query` / `List{Entidad}Query` | `GetProyectoByIdQuery` |
-| Handlers | `{Command/Query}Handler` | `CrearProyectoCommandHandler` |
-| DTOs | `{Entidad}{Tipo}Dto` | `ProyectoResponseDto`, `TareaCreateDto` |
+| Clases | PascalCase singular | `TaskEntity`, `ProjectRepository` |
+| Interfaces (puertos) | `I` + PascalCase | `ITaskRepository`, `IReportExporter` |
+| Commands | `{Accion}{Entidad}Command` | `CreateProjectCommand`, `MoveTaskCommand` |
+| Queries | `Get{Entidad}Query` / `List{Entidad}Query` | `GetProjectByIdQuery` |
+| Handlers | `{Command/Query}Handler` | `CreateProjectCommandHandler` |
+| DTOs | `{Entidad}{Tipo}Dto` | `ProjectResponseDto`, `TaskCreateDto` |
 | Campos privados | `_camelCase` | `_dbContext`, `_repository` |
-| Tablas PostgreSQL | `snake_case` plural | `proyectos`, `tareas`, `columnas` |
-| Columnas | `snake_case` | `columna_id`, `creado_en` |
-| Índices | `ix_{tabla}_{columnas}` | `ix_tareas_columna_id_orden` |
+| Tablas PostgreSQL | `snake_case` plural | `projects`, `tasks`, `columns` |
+| Columnas | `snake_case` | `column_id`, `created_at` |
+| Índices | `ix_{tabla}_{columnas}` | `ix_tasks_column_id_order` |
 
 ### 7.2 Frontend (Angular 17)
 
@@ -195,7 +195,13 @@ Vive localmente, fuera de control de versiones (regla de confidencialidad, secci
 
 ### 7.3 Idioma
 
-Dominio y nombres de negocio en **español** (Proyecto, Columna, Tarea — como en el enunciado); nombres técnicos genéricos (Repository, Handler, Service, Command) en inglés, siguiendo la convención estándar de .NET/Angular. No mezclar dentro del mismo concepto (no `TareaHandler` y `TaskRepository` a la vez para la misma entidad).
+**Todo identificador de código en inglés** — clases, propiedades, tablas, columnas, variables, métodos, nombres de archivo (`User`, `Project`, `Column`, `Task`, `email`, `created_at`...). Decisión revisada durante el análisis de Fase 2 (2026-07-31): el enunciado usa terminología de dominio en español (Proyecto, Columna, Tarea) porque así describe el negocio, pero eso no obliga a que los identificadores del código la repliquen — el inglés es el estándar de facto en .NET/Angular y evita mezclar dos idiomas en la misma base de código a medida que crece. Detalle y alternativa descartada en `docs/decisions/arquitectura-decisiones.md` §12.
+
+Lo que **sí** se mantiene en español, porque el evaluador y la sustentación son en español:
+- Mensajes de validación/error que ve el usuario final (ej. `"El correo es obligatorio"`).
+- Toda la documentación del proyecto: README, este documento, ADR, mensajes de commit.
+
+La Fase 0-1 ya implementada (`Usuario`, `Correo`, tabla `usuarios`) se renombra en un retrofit dedicado para no dejar una inconsistencia permanente frente a Fase 2 en adelante, que ya nace en inglés.
 
 ---
 

@@ -9,7 +9,7 @@ public class AppDbContext : DbContext
     {
     }
 
-    public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
