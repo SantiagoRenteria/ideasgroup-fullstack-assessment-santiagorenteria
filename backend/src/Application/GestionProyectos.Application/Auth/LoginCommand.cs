@@ -3,4 +3,4 @@ using GestionProyectos.Domain.Common;
 
 namespace GestionProyectos.Application.Auth;
 
-public record LoginCommand(string Correo, string Password) : ICommand<Result<LoginResponseDto>>;
+public record LoginCommand(string Email, string Password) : ICommand<Result<LoginResponseDto>>;

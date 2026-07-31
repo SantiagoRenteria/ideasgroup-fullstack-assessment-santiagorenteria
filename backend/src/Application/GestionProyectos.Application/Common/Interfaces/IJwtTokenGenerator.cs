@@ -6,5 +6,5 @@ public record JwtToken(string Value, DateTime ExpiresAtUtc);
 
 public interface IJwtTokenGenerator
 {
-    JwtToken Generate(Usuario usuario);
+    JwtToken Generate(User user);
 }

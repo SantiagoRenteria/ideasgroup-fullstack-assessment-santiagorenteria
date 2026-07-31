@@ -17,15 +17,15 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         _options = options.Value;
     }
 
-    public JwtToken Generate(Usuario usuario)
+    public JwtToken Generate(User user)
     {
         var expiresAtUtc = DateTime.UtcNow.AddMinutes(_options.ExpirationMinutes);
 
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Sub, usuario.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, usuario.Correo),
-            new Claim(JwtRegisteredClaimNames.Name, usuario.Nombre),
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.Email, user.Email),
+            new Claim(JwtRegisteredClaimNames.Name, user.Name),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
