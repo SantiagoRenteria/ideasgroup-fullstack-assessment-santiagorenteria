@@ -192,3 +192,29 @@ Ver `docs/fases-implementacion.md` — resumen:
 5. Reportes duales (día 5)
 6. Pruebas restantes, README, diagrama ERD, opcionales (día 6)
 7. Buffer, commits atómicos, video opcional (día 7)
+
+---
+
+## 11. Autenticación — Decisiones de Implementación (Fase 1)
+
+### 11.1 BCrypt sobre Argon2
+
+OWASP recomienda Argon2id como primera opción y BCrypt como segunda. Se eligió **BCrypt** (`BCrypt.Net-Next`) de todas formas: con un plazo de 7 días y sin necesidad de tunear memoria/paralelismo/iteraciones, la superficie de error de configurar mal Argon2 pesa más que la ganancia teórica de resistencia a GPU/ASIC en un sistema de 2 usuarios semilla sin registro público. Es una desviación consciente de la recomendación "ideal" de OWASP, justificada por gestión de riesgo bajo restricción de tiempo real — exactamente el tipo de trade-off que la sustentación técnica evalúa.
+
+### 11.2 Mecanismo de pepper y su trade-off con la migración semilla
+
+El pepper no se concatena directamente: se aplica `HMACSHA256(password, pepper)` y el resultado (no la contraseña original) es lo que entra a `BCrypt.HashPassword`. Esto evita el límite de 72 bytes de entrada de BCrypt y ata criptográficamente el pepper al hash sin que dependa de que BCrypt trunque la entrada silenciosamente.
+
+**Trade-off importante:** el enunciado (6.2) exige "migración semilla" — EF Core `HasData` graba el hash en tiempo de diseño de la migración, no en tiempo de ejecución. Si `PASSWORD_PEPPER` (variable de entorno, mismo patrón que `JWT_SECRET`) cambia después de aplicar la migración, **los 2 usuarios semilla dejan de poder loguearse** porque el hash grabado ya no coincide con el pepper nuevo. Se acepta este trade-off — es consistente con cómo ya se comporta `POSTGRES_PASSWORD` frente a un volumen de datos ya creado — y se documenta explícitamente en el README: no cambiar `PASSWORD_PEPPER` sin regenerar la migración `InitialCreate`.
+
+### 11.3 JWT
+
+Claims: `sub` (Id de usuario), `email`, `name`, `jti` (identificador único del token). `TokenValidationParameters` valida `Issuer`, `Audience`, expiración (`ClockSkew = TimeSpan.Zero`, sin margen de tolerancia) y la firma con la misma clave simétrica usada para firmar. Configuración vía Options Pattern (`JwtOptions`, `SecurityOptions`) enlazada a `Jwt:*` y `Security:Pepper`, alimentada por variables de entorno en `docker-compose.yml` — nunca hardcodeada.
+
+### 11.4 Errores de negocio (Result) vs errores de formato (excepción + middleware)
+
+`LoginCommandHandler` devuelve `Result<LoginResponseDto>.Failure(...)` para credenciales inválidas — mapeado explícitamente a 401 en el endpoint. El mensaje es genérico ("Correo o contraseña incorrectos") para no revelar si el correo existe (evita enumeración de usuarios). En cambio, `FluentValidation` (formato de correo vacío/inválido) lanza `ValidationException`, capturada por un middleware global (`app.UseExceptionHandler`) que la traduce a 400. La distinción es deliberada: el Result Pattern es para reglas de negocio previsibles por handler; los errores de formato de entrada son estructurales y se resuelven una sola vez, de forma centralizada.
+
+### 11.5 Minimal API de autenticación
+
+`POST /api/auth/login` vive en `Endpoints/AuthEndpoints.cs` (`MapAuthEndpoints`), consistente con la decisión de la sección 3. El DTO de request (`LoginRequest`) es propio de la capa API — no se reutiliza `LoginCommand` de Application directamente en el contrato HTTP, para no acoplar el shape de la API a la forma interna del caso de uso.
