@@ -1,0 +1,396 @@
+{
+    "info": {
+        "_postman_id": "a1e6f0a0-1234-4c9a-8b1a-gestionproyectos-coll",
+        "name": "GestionProyectos API",
+        "description": "Coleccion manual para probar la API de GestionProyectos (IDEASGROUP-REM-LAT-26-2907) contra el entorno levantado con docker compose. Usar el environment 'GestionProyectos - Local'.\n\nFlujo sugerido: correr 'Login' primero (guarda el token automaticamente), luego 'Projects > Create Project' (guarda projectId), luego 'Columns > Create Column' (guarda columnId). El resto de los requests ya quedan encadenados a esas variables.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            { "key": "token", "value": "{{token}}", "type": "string" }
+        ]
+    },
+    "event": [],
+    "variable": [],
+    "item": [
+        {
+            "name": "Auth",
+            "item": [
+                {
+                    "name": "Login",
+                    "request": {
+                        "auth": { "type": "noauth" },
+                        "method": "POST",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"admin@ideasgroup.test\",\n  \"password\": \"IdeasGroup2026!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/login",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["auth", "login"]
+                        },
+                        "description": "Usuario semilla admin (ver migracion InitialCreate). El otro usuario semilla es evaluador@ideasgroup.test con la misma contraseña."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                                    "const body = pm.response.json();",
+                                    "pm.environment.set('token', body.token);",
+                                    "pm.test('token guardado en el environment', () => pm.expect(body.token).to.be.a('string'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login - Credenciales invalidas (401)",
+                    "request": {
+                        "auth": { "type": "noauth" },
+                        "method": "POST",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"admin@ideasgroup.test\",\n  \"password\": \"incorrecta\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/login",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["auth", "login"]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Projects",
+            "item": [
+                {
+                    "name": "Create Project",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Migracion ERP\",\n  \"description\": \"Proyecto de prueba creado desde Postman\",\n  \"startDate\": \"2026-01-01\",\n  \"endDate\": \"2026-06-30\",\n  \"status\": \"Planned\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/projects",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects"]
+                        },
+                        "description": "status: Planned | InProgress | Completed | Cancelled"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                                    "const body = pm.response.json();",
+                                    "pm.environment.set('projectId', body.id);",
+                                    "pm.test('projectId guardado en el environment', () => pm.expect(body.id).to.be.a('string'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "List Projects (paginado + filtro)",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/projects?page=1&pageSize=10&name=&status=",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects"],
+                            "query": [
+                                { "key": "page", "value": "1" },
+                                { "key": "pageSize", "value": "10" },
+                                { "key": "name", "value": "", "description": "coincidencia parcial, ej. 'erp'" },
+                                { "key": "status", "value": "", "description": "Planned | InProgress | Completed | Cancelled" }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                                    "pm.test('respuesta paginada', () => {",
+                                    "  const body = pm.response.json();",
+                                    "  pm.expect(body).to.have.property('items');",
+                                    "  pm.expect(body).to.have.property('totalCount');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get Project By Id",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/{{projectId}}",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "{{projectId}}"]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Update Project",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Migracion ERP (actualizado)\",\n  \"description\": \"Descripcion actualizada desde Postman\",\n  \"startDate\": \"2026-01-01\",\n  \"endDate\": \"2026-08-31\",\n  \"status\": \"InProgress\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/{{projectId}}",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "{{projectId}}"]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get Project By Id - No encontrado (404)",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/00000000-0000-0000-0000-000000000000",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "00000000-0000-0000-0000-000000000000"]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Columns",
+            "item": [
+                {
+                    "name": "Create Column",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Por hacer\",\n  \"order\": 0\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/{{projectId}}/columns",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "{{projectId}}", "columns"]
+                        },
+                        "description": "Requiere que {{projectId}} este seteado (correr 'Projects > Create Project' primero)."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                                    "const body = pm.response.json();",
+                                    "pm.environment.set('columnId', body.id);",
+                                    "pm.test('columnId guardado en el environment', () => pm.expect(body.id).to.be.a('string'));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "List Columns By Project",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/{{projectId}}/columns",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "{{projectId}}", "columns"]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Update Column (rename + reorder)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"En progreso\",\n  \"order\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/columns/{{columnId}}",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["columns", "{{columnId}}"]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Delete Column",
+                    "request": {
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/columns/{{columnId}}",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["columns", "{{columnId}}"]
+                        },
+                        "description": "204 si la columna no tiene tareas. 409 si tiene tareas (regla de negocio, seccion 6.4 del enunciado) -- no hay endpoint para crear tareas todavia (Fase 3), asi que en un entorno recien creado esto siempre deberia dar 204."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('204 No Content o 409 Conflict (si tiene tareas)', () => {",
+                                    "  pm.expect([204, 409]).to.include(pm.response.code);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Delete Column - No encontrada (404)",
+                    "request": {
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/columns/00000000-0000-0000-0000-000000000000",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["columns", "00000000-0000-0000-0000-000000000000"]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Cleanup",
+            "description": "Se corre al final a proposito: Delete Column ya elimino la columna de prueba en el folder anterior, asi que este paso solo necesita borrar el proyecto. Si se corre toda la coleccion de punta a punta, deja el entorno tan limpio como estaba antes.",
+            "item": [
+                {
+                    "name": "Delete Project",
+                    "request": {
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/{{projectId}}",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "{{projectId}}"]
+                        },
+                        "description": "Hard delete en cascada: tambien elimina cualquier columna (y tarea) que haya quedado en el proyecto."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
