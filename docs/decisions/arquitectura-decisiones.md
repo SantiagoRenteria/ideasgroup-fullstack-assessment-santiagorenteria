@@ -156,7 +156,7 @@ El endpoint resuelve por inyección de `IEnumerable<IReportExporter>`, nunca por
 | Valores de `Prioridad` de Tarea | Baja / Media / Alta / Urgente | Enum fijo |
 | Borrado de Proyecto con contenido | **Decisión superada, ver §13** — originalmente hard delete en cascada; revisado a soft-delete + regla "no borrar si tiene tareas" durante Fase 2 | Ver §13 para el detalle y la justificación del cambio |
 | Dónde vive el cálculo de posición | Backend autoritativo (LexoRank); frontend reordena array localmente para optimistic update | Evita duplicar lógica de negocio crítica en dos lenguajes |
-| Almacenamiento del JWT en cliente | Memoria (variable de servicio Angular), no localStorage ni httpOnly cookie | El enunciado (6.2) exige un interceptor que **adjunte** el token manualmente — una cookie httpOnly se envía automáticamente y no requeriría interceptor, por lo que el propio diseño del enunciado indica token accesible desde JS |
+| Almacenamiento del JWT en cliente | **Decisión revisada, ver §17** — originalmente memoria pura; revisado a `sessionStorage` durante la Fase 4 | Ver §17 para el detalle y la justificación del cambio |
 | Mapeo Entity↔DTO | Manual, centralizado en métodos de extensión por entidad | Explícito y defendible, sin duplicación inline en cada Handler |
 | Diagrama de base de datos | Imagen PNG (ERD) embebida en README, generada desde el esquema real de las migraciones | Cumple la restricción explícita de 8: "imagen solamente, no textos de otras herramientas externas" |
 
@@ -381,3 +381,22 @@ No exigido por el enunciado, pedido explícitamente durante la Fase 4 (mostrar e
 **Alternativa descartada — refresh tokens:** resolvería la revocación de forma más "estándar" (access token de vida muy corta + refresh token de vida larga, revocable), pero es una reestructuración completa del flujo de autenticación (nuevo endpoint, nuevo almacenamiento, rotación) no pedida y fuera de alcance para un cierre de sesión explícito por parte del usuario.
 
 **Frontend:** `AuthService.logout()` llama a `POST /api/auth/logout` (si hay token) y limpia el estado local en memoria y navega al login tanto si la llamada tiene éxito como si falla — un fallo de red en el logout no debe dejar al usuario atrapado en una sesión que ya quiere cerrar. `AuthInterceptor` excluye `/auth/logout` (además de `/auth/login`, ya excluido) del logout automático por 401, para no disparar una segunda llamada de logout recursiva si el propio logout devuelve 401.
+
+---
+
+## 17. Almacenamiento del JWT en cliente — revisión de la decisión inicial (Fase 4)
+
+**Decisión superada** (no se borra, se documenta el cambio — regla de este archivo): §7 establecía JWT solo en memoria (variable de instancia de `AuthService`), explícitamente **sin** `localStorage`. La justificación original solo comparaba memoria/`localStorage` contra cookie httpOnly (el enunciado 6.2 exige un interceptor que adjunte el token, lo que descarta la cookie automática) — nunca argumentó memoria por sobre `sessionStorage` específicamente.
+
+**Cómo se detectó:** al usar la aplicación de forma más activa durante la Fase 4 (agregar el nombre de usuario y el logout al nav), recargar la página con una sesión activa siempre desloguea — la memoria de la SPA se destruye por completo en cada F5. Es el costo real, no solo teórico, de "memoria pura", y no estaba señalado como una fricción de UX esperada en ningún lado del README ni del ADR.
+
+**Decisión nueva (2026-08-01):** el JWT y los datos del usuario actual (`{name, email}`) se guardan en `sessionStorage` en vez de en una variable de instancia.
+
+**Por qué:**
+- `sessionStorage` sigue exigiendo que `AuthInterceptor` adjunte el header manualmente (no es automático como una cookie) — la razón original del ADR para descartar la cookie httpOnly sigue vigente y **no** aplica como argumento en contra de `sessionStorage`.
+- Sobrevive a recargar la página (soluciona la fricción real detectada) pero se pierde al cerrar la pestaña o el navegador — no es tan persistente como `localStorage`.
+- Sigue siendo accesible desde JavaScript (como memoria o `localStorage`), así que la superficie de riesgo ante un XSS no cambia en calidad — solo en duración: con memoria pura, un token robado deja de servir en cuanto la pestaña se recarga o cierra; con `sessionStorage`, sirve mientras la pestaña siga abierta (pero no sobrevive a cerrarla, a diferencia de `localStorage`).
+
+**Alternativa descartada — `localStorage`:** sobrevive incluso a cerrar y reabrir el navegador, la opción más cómoda para el usuario. Se descarta porque un token robado por XSS seguiría sirviendo indefinidamente (hasta su expiración natural) sin importar si la víctima cierra el navegador — una ventana de exposición mayor que no se justifica solo por comodidad, dado que igual hace falta el interceptor en ambos casos.
+
+**Alternativa descartada — mantener memoria pura:** es la opción más resistente a XSS (nada persiste nunca, ni siquiera dentro de la misma pestaña tras un F5), pero la fricción de UX (perder la sesión en cada recarga accidental) pesa más que esa ganancia marginal de seguridad para una aplicación de evaluación con 2 usuarios semilla — el propio enunciado no exige ningún nivel de persistencia de sesión, así que es una decisión de criterio, no de cumplimiento.
