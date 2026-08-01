@@ -1,0 +1,72 @@
+<p-toast></p-toast>
+<p-confirmDialog></p-confirmDialog>
+
+<div class="board-header flex justify-content-between align-items-center mb-4 gap-2 flex-wrap">
+    <h5 class="m-0">{{ board?.projectName ?? 'Tablero' }}</h5>
+</div>
+
+<div class="board-columns" cdkDropListGroup *ngIf="board">
+    <div class="board-column card" *ngFor="let column of board.columns; trackBy: trackByColumnId">
+        <div class="board-column-header flex justify-content-between align-items-center mb-3">
+            <span class="font-bold">{{ column.name }}</span>
+            <span class="board-column-count">{{ column.tasks.length }}</span>
+        </div>
+
+        <div
+            class="board-column-tasks"
+            cdkDropList
+            [id]="column.id"
+            [cdkDropListData]="column.tasks"
+            (cdkDropListDropped)="onDrop($event, column)"
+        >
+            <div class="board-task-card" *ngFor="let task of column.tasks; trackBy: trackByTaskId" cdkDrag [cdkDragData]="task">
+                <div class="board-task-card-placeholder" *cdkDragPlaceholder></div>
+
+                <div class="flex justify-content-between align-items-start gap-2">
+                    <span class="board-task-title" (click)="openEditTask(task)">{{ task.title }}</span>
+                    <div class="flex gap-1">
+                        <button
+                            pButton
+                            type="button"
+                            icon="pi pi-pencil"
+                            class="p-button-text p-button-sm"
+                            (click)="openEditTask(task)"
+                        ></button>
+                        <button
+                            pButton
+                            type="button"
+                            icon="pi pi-trash"
+                            class="p-button-text p-button-sm p-button-danger"
+                            (click)="confirmDelete(task)"
+                        ></button>
+                    </div>
+                </div>
+
+                <p class="board-task-description">{{ task.description }}</p>
+
+                <div class="flex justify-content-between align-items-center mt-2">
+                    <p-tag [severity]="prioritySeverity[task.priority]" [value]="priorityLabels[task.priority]"></p-tag>
+                </div>
+            </div>
+        </div>
+
+        <button
+            pButton
+            type="button"
+            icon="pi pi-plus"
+            label="Agregar tarea"
+            class="p-button-text w-full mt-2"
+            (click)="openCreateTask(column.id)"
+        ></button>
+    </div>
+</div>
+
+<div class="text-center py-4" *ngIf="loading">Cargando tablero...</div>
+
+<app-task-form
+    [visible]="taskFormVisible"
+    [task]="editingTask"
+    [columnId]="targetColumnId"
+    (visibleChange)="taskFormVisible = $event"
+    (saved)="loadBoard()"
+></app-task-form>

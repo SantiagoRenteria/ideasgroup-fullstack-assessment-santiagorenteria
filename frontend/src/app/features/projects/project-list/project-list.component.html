@@ -55,6 +55,7 @@
                 <td>{{ project.endDate }}</td>
                 <td>{{ statusLabels[project.status] }}</td>
                 <td>
+                    <button pButton type="button" icon="pi pi-th-large" class="p-button-text" pTooltip="Tablero" [routerLink]="['/board', project.id]"></button>
                     <button pButton type="button" icon="pi pi-table" class="p-button-text" pTooltip="Columnas" (click)="openColumns(project)"></button>
                     <button pButton type="button" icon="pi pi-pencil" class="p-button-text" pTooltip="Editar" (click)="openEdit(project)"></button>
                     <button pButton type="button" icon="pi pi-trash" class="p-button-text p-button-danger" pTooltip="Eliminar" (click)="confirmDelete(project)"></button>
