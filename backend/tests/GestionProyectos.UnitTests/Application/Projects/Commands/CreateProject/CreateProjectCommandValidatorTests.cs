@@ -44,15 +44,32 @@ public class CreateProjectCommandValidatorTests
     }
 
     [Fact]
-    public void Validate_ConFechaDeInicioAnteriorAHoy_TieneError()
+    public void Validate_ConFechaDeInicioDeHaceDosDias_TieneError()
     {
-        var ayer = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
-        var command = new CreateProjectCommand("Nombre", "Descripcion", ayer, ayer.AddMonths(1), ProjectStatus.Planned);
+        // Fuera del margen de 1 dia que absorbe el desfase de zona horaria entre el
+        // "hoy" local del navegador y el UtcNow del servidor (ver el comentario en
+        // CreateProjectCommandValidator).
+        var haceDosDias = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-2);
+        var command = new CreateProjectCommand("Nombre", "Descripcion", haceDosDias, haceDosDias.AddMonths(1), ProjectStatus.Planned);
 
         var result = _validator.Validate(command);
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(CreateProjectCommand.StartDate));
+    }
+
+    [Fact]
+    public void Validate_ConFechaDeInicioAyer_NoTieneError()
+    {
+        // Dentro del margen de 1 dia: un usuario en una zona horaria detras de UTC
+        // (ej. Ecuador, UTC-5) puede tener "hoy" localmente cuando el servidor ya
+        // considera que es "ayer" en UTC. No debe rechazarse.
+        var ayer = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+        var command = new CreateProjectCommand("Nombre", "Descripcion", ayer, ayer.AddMonths(1), ProjectStatus.Planned);
+
+        var result = _validator.Validate(command);
+
+        Assert.True(result.IsValid);
     }
 
     [Fact]
