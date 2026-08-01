@@ -1,6 +1,8 @@
 using System.Text;
+using System.Text.Json;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Infrastructure.Persistence;
+using GestionProyectos.Infrastructure.Realtime;
 using GestionProyectos.Infrastructure.Repositories;
 using GestionProyectos.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -28,6 +30,12 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, Persistence.UnitOfWork>();
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
+        services.AddScoped<IBoardNotifier, SignalRBoardNotifier>();
+
+        // JSON en camelCase para paridad con las respuestas REST (JsonStringEnumConverter
+        // de Program.cs) -- el cliente Angular usa los mismos DTOs para ambos canales.
+        services.AddSignalR().AddJsonProtocol(options =>
+            options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
 
         var jwtOptions = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 
@@ -44,6 +52,22 @@ public static class DependencyInjection
                     ClockSkew = TimeSpan.Zero,
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Secret))
+                };
+
+                // El cliente SignalR de navegador no puede fijar el header Authorization en
+                // el handshake de WebSocket -- envia el JWT como query string (access_token)
+                // solo para /hubs/*; el resto de la API sigue exigiendo el header Bearer.
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+
+                        if (!string.IsNullOrEmpty(accessToken) && context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                            context.Token = accessToken;
+
+                        return Task.CompletedTask;
+                    }
                 };
             });
 
