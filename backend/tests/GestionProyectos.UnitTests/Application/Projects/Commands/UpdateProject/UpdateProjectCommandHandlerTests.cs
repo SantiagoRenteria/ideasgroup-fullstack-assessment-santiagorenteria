@@ -46,7 +46,29 @@ public class UpdateProjectCommandHandlerTests
         var result = await handler.Handle(command, CancellationToken.None);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("Proyecto no encontrado.", result.Error);
+        Assert.Equal(UpdateProjectCommandHandler.ProjectNotFound, result.Error);
+        await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_ConNombreYaUsadoPorOtroProyecto_RetornaFailureYNoActualiza()
+    {
+        var project = new Project(
+            Guid.NewGuid(), "Nombre viejo", "Descripcion",
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30), ProjectStatus.Planned);
+        _projectRepository.GetByIdAsync(project.Id, Arg.Any<CancellationToken>()).Returns(project);
+        _projectRepository.ExistsByNameAsync("Nombre en uso", project.Id, Arg.Any<CancellationToken>()).Returns(true);
+
+        var handler = new UpdateProjectCommandHandler(_projectRepository, _unitOfWork);
+        var command = new UpdateProjectCommand(
+            project.Id, "Nombre en uso", "Descripcion",
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30), ProjectStatus.Planned);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(UpdateProjectCommandHandler.DuplicateName, result.Error);
+        Assert.Equal("Nombre viejo", project.Name);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 }

@@ -14,6 +14,12 @@ public class CreateProjectCommandValidator : AbstractValidator<CreateProjectComm
             .NotEmpty().WithMessage("La descripción del proyecto es obligatoria.")
             .MaximumLength(2000).WithMessage("La descripción no puede superar los 2000 caracteres.");
 
+        // Solo al crear -- Update no la exige, para no bloquear la edicion de un
+        // proyecto cuya fecha de inicio ya paso (ver UpdateProjectCommandValidator).
+        RuleFor(x => x.StartDate)
+            .GreaterThanOrEqualTo(_ => DateOnly.FromDateTime(DateTime.UtcNow))
+            .WithMessage("La fecha de inicio no puede ser anterior a hoy.");
+
         RuleFor(x => x.EndDate)
             .GreaterThanOrEqualTo(x => x.StartDate)
             .WithMessage("La fecha de fin prevista no puede ser anterior a la fecha de inicio.");

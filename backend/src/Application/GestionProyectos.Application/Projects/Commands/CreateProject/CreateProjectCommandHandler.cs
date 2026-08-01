@@ -8,6 +8,8 @@ namespace GestionProyectos.Application.Projects.Commands.CreateProject;
 
 public class CreateProjectCommandHandler : IRequestHandler<CreateProjectCommand, Result<ProjectResponseDto>>
 {
+    public const string DuplicateName = "Ya existe un proyecto con este nombre.";
+
     private readonly IProjectRepository _projectRepository;
     private readonly IUnitOfWork _unitOfWork;
 
@@ -19,6 +21,9 @@ public class CreateProjectCommandHandler : IRequestHandler<CreateProjectCommand,
 
     public async Task<Result<ProjectResponseDto>> Handle(CreateProjectCommand request, CancellationToken cancellationToken)
     {
+        if (await _projectRepository.ExistsByNameAsync(request.Name, excludeProjectId: null, cancellationToken))
+            return Result<ProjectResponseDto>.Failure(DuplicateName);
+
         var project = new Project(
             Guid.NewGuid(),
             request.Name,

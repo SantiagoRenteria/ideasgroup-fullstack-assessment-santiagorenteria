@@ -12,6 +12,15 @@ describe('ProjectFormComponent', () => {
     let fixture: ComponentFixture<ProjectFormComponent>;
     let projectService: jasmine.SpyObj<ProjectService>;
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const inSixMonths = new Date(today);
+    inSixMonths.setMonth(inSixMonths.getMonth() + 6);
+
     beforeEach(async () => {
         projectService = jasmine.createSpyObj('ProjectService', ['create', 'update']);
 
@@ -59,11 +68,38 @@ describe('ProjectFormComponent', () => {
         component.form.patchValue({
             name: 'Nombre',
             description: 'Descripcion',
-            startDate: new Date('2026-06-30'),
-            endDate: new Date('2026-01-01')
+            startDate: inSixMonths,
+            endDate: today
         });
 
         expect(component.form.errors?.['endDateBeforeStartDate']).toBeTrue();
+    });
+
+    it('al crear, una fecha de inicio anterior a hoy invalida el campo', () => {
+        openDialog(null);
+        component.form.patchValue({ startDate: yesterday });
+
+        expect(component.form.get('startDate')?.errors?.['startDateInPast']).toBeTrue();
+    });
+
+    it('al crear, minStartDate es hoy (el date picker no deja elegir fechas pasadas)', () => {
+        openDialog(null);
+
+        expect(component.minStartDate).toEqual(today);
+    });
+
+    it('al editar, una fecha de inicio pasada no invalida el campo ni restringe minStartDate', () => {
+        openDialog({
+            id: 'p1',
+            name: 'Proyecto en curso',
+            description: 'Desc',
+            startDate: '2020-01-01',
+            endDate: '2026-06-30',
+            status: ProjectStatus.InProgress
+        });
+
+        expect(component.form.get('startDate')?.errors?.['startDateInPast']).toBeFalsy();
+        expect(component.minStartDate).toBeNull();
     });
 
     it('save() con formulario invalido no llama al servicio', () => {
@@ -80,8 +116,8 @@ describe('ProjectFormComponent', () => {
         component.form.patchValue({
             name: 'Migracion ERP',
             description: 'Descripcion',
-            startDate: new Date(2026, 0, 1),
-            endDate: new Date(2026, 5, 30),
+            startDate: tomorrow,
+            endDate: inSixMonths,
             status: ProjectStatus.Planned
         });
         projectService.create.and.returnValue(
@@ -119,8 +155,8 @@ describe('ProjectFormComponent', () => {
         component.form.patchValue({
             name: 'Migracion ERP',
             description: 'Descripcion',
-            startDate: new Date(2026, 0, 1),
-            endDate: new Date(2026, 5, 30)
+            startDate: tomorrow,
+            endDate: inSixMonths
         });
         projectService.create.and.returnValue(throwError(() => new Error('falla de red')));
 
@@ -128,5 +164,26 @@ describe('ProjectFormComponent', () => {
 
         expect(component.saving).toBeFalse();
         expect(component.visible).toBeTrue();
+    });
+
+    it('si el servidor responde con un mensaje de negocio (ej. nombre duplicado), se muestra tal cual', () => {
+        openDialog(null);
+        component.form.patchValue({
+            name: 'Migracion ERP',
+            description: 'Descripcion',
+            startDate: tomorrow,
+            endDate: inSixMonths
+        });
+        const messageService = TestBed.inject(MessageService);
+        spyOn(messageService, 'add');
+        projectService.create.and.returnValue(
+            throwError(() => ({ error: { error: 'Ya existe un proyecto con este nombre.' } }))
+        );
+
+        component.save();
+
+        expect(messageService.add).toHaveBeenCalledWith(
+            jasmine.objectContaining({ detail: 'Ya existe un proyecto con este nombre.' })
+        );
     });
 });

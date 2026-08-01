@@ -7,7 +7,8 @@ namespace GestionProyectos.Application.Projects.Commands.UpdateProject;
 
 public class UpdateProjectCommandHandler : IRequestHandler<UpdateProjectCommand, Result<ProjectResponseDto>>
 {
-    private const string ProjectNotFound = "Proyecto no encontrado.";
+    public const string ProjectNotFound = "Proyecto no encontrado.";
+    public const string DuplicateName = "Ya existe un proyecto con este nombre.";
 
     private readonly IProjectRepository _projectRepository;
     private readonly IUnitOfWork _unitOfWork;
@@ -24,6 +25,9 @@ public class UpdateProjectCommandHandler : IRequestHandler<UpdateProjectCommand,
 
         if (project is null)
             return Result<ProjectResponseDto>.Failure(ProjectNotFound);
+
+        if (await _projectRepository.ExistsByNameAsync(request.Name, excludeProjectId: project.Id, cancellationToken))
+            return Result<ProjectResponseDto>.Failure(DuplicateName);
 
         project.Update(request.Name, request.Description, request.StartDate, request.EndDate, request.Status);
 

@@ -3,6 +3,7 @@
     [(visible)]="visible"
     [modal]="true"
     [style]="{ width: '32rem' }"
+    [contentStyle]="{ 'max-height': '70vh', 'overflow-y': 'auto' }"
     (onHide)="close()"
 >
     <form [formGroup]="form" (ngSubmit)="save()">
@@ -21,11 +22,22 @@
         <div class="formgrid grid">
             <div class="field col">
                 <label for="startDate">Fecha de inicio</label>
-                <p-calendar inputId="startDate" formControlName="startDate" dateFormat="yy-mm-dd" class="w-full" [showIcon]="true"></p-calendar>
+                <p-calendar
+                    inputId="startDate"
+                    formControlName="startDate"
+                    dateFormat="yy-mm-dd"
+                    class="w-full"
+                    [showIcon]="true"
+                    appendTo="body"
+                    [minDate]="minStartDate"
+                ></p-calendar>
+                <small class="p-error" *ngIf="submitted && form.get('startDate')?.errors?.['startDateInPast']">
+                    La fecha de inicio no puede ser anterior a hoy.
+                </small>
             </div>
             <div class="field col">
                 <label for="endDate">Fecha de fin prevista</label>
-                <p-calendar inputId="endDate" formControlName="endDate" dateFormat="yy-mm-dd" class="w-full" [showIcon]="true"></p-calendar>
+                <p-calendar inputId="endDate" formControlName="endDate" dateFormat="yy-mm-dd" class="w-full" [showIcon]="true" appendTo="body"></p-calendar>
             </div>
         </div>
         <small class="p-error" *ngIf="submitted && form.errors?.['endDateBeforeStartDate']">
@@ -41,6 +53,7 @@
                 optionLabel="label"
                 optionValue="value"
                 formControlName="status"
+                appendTo="body"
             ></p-dropdown>
         </div>
     </form>
