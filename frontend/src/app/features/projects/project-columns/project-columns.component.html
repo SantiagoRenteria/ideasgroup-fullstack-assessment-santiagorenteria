@@ -1,0 +1,47 @@
+<p-dialog
+    [header]="'Columnas de ' + projectName"
+    [(visible)]="visible"
+    [modal]="true"
+    [style]="{ width: '32rem' }"
+    (onHide)="close()"
+>
+    <div class="flex align-items-center gap-2 mb-3">
+        <input
+            type="text"
+            pInputText
+            class="flex-1"
+            placeholder="Nombre de la nueva columna"
+            [(ngModel)]="newColumnName"
+            (keyup.enter)="add()"
+        />
+        <button pButton type="button" icon="pi pi-plus" label="Agregar" (click)="add()"></button>
+    </div>
+
+    <div *ngIf="loading" class="text-center py-3">Cargando columnas...</div>
+
+    <ul class="list-none p-0 m-0" *ngIf="!loading">
+        <li *ngFor="let column of columns; let i = index" class="flex align-items-center gap-2 py-2 border-bottom-1 surface-border">
+            <div class="flex flex-column">
+                <button pButton type="button" icon="pi pi-chevron-up" class="p-button-text p-button-sm" [disabled]="i === 0" (click)="moveUp(i)"></button>
+                <button pButton type="button" icon="pi pi-chevron-down" class="p-button-text p-button-sm" [disabled]="i === columns.length - 1" (click)="moveDown(i)"></button>
+            </div>
+
+            <ng-container *ngIf="editingId === column.id; else viewMode">
+                <input type="text" pInputText class="flex-1" [(ngModel)]="editingName" (keyup.enter)="confirmEdit(column)" />
+                <button pButton type="button" icon="pi pi-check" class="p-button-text p-button-success" (click)="confirmEdit(column)"></button>
+                <button pButton type="button" icon="pi pi-times" class="p-button-text" (click)="cancelEdit()"></button>
+            </ng-container>
+            <ng-template #viewMode>
+                <span class="flex-1">{{ column.name }}</span>
+                <button pButton type="button" icon="pi pi-pencil" class="p-button-text" (click)="startEdit(column)"></button>
+                <button pButton type="button" icon="pi pi-trash" class="p-button-text p-button-danger" (click)="delete(column)"></button>
+            </ng-template>
+        </li>
+
+        <li *ngIf="columns.length === 0" class="text-color-secondary py-3">Este proyecto todavía no tiene columnas.</li>
+    </ul>
+
+    <ng-template pTemplate="footer">
+        <button pButton type="button" label="Cerrar" class="p-button-text" (click)="close()"></button>
+    </ng-template>
+</p-dialog>
