@@ -1,3 +1,5 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using GestionProyectos.Application.Common.Interfaces;
@@ -31,6 +33,7 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IBoardNotifier, SignalRBoardNotifier>();
+        services.AddScoped<ITokenRevocationStore, TokenRevocationStore>();
 
         // JSON en camelCase para paridad con las respuestas REST (JsonStringEnumConverter
         // de Program.cs) -- el cliente Angular usa los mismos DTOs para ambos canales.
@@ -67,6 +70,26 @@ public static class DependencyInjection
                             context.Token = accessToken;
 
                         return Task.CompletedTask;
+                    },
+
+                    // Blocklist de tokens cerrados por el propio usuario (POST
+                    // /api/auth/logout) -- ver docs/decisions/arquitectura-decisiones.md
+                    // §16. Corre en cada request autenticado, incluido el hub de SignalR
+                    // (comparten esta misma configuracion de AddJwtBearer).
+                    OnTokenValidated = async context =>
+                    {
+                        var jti = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);
+
+                        if (jti is null)
+                        {
+                            context.Fail("Token invalido.");
+                            return;
+                        }
+
+                        var revocationStore = context.HttpContext.RequestServices.GetRequiredService<ITokenRevocationStore>();
+
+                        if (await revocationStore.IsRevokedAsync(jti, context.HttpContext.RequestAborted))
+                            context.Fail("La sesión fue cerrada.");
                     }
                 };
             });
