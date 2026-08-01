@@ -7,11 +7,32 @@ using GestionProyectos.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    // Boton "Authorize" en Swagger UI: pegar el JWT (sin "Bearer ") emitido por
+    // POST /api/auth/login para probar los endpoints protegidos.
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Token JWT emitido por POST /api/auth/login."
+    });
+
+    var bearerScheme = new OpenApiSecurityScheme
+    {
+        Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+    };
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement { [bearerScheme] = Array.Empty<string>() });
+});
 
 // Enums (ProjectStatus, TaskPriority) legibles en JSON ("Planned") en vez de su valor
 // entero subyacente -- mas defendible en la respuesta de la API y en Swagger.
