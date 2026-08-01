@@ -52,6 +52,35 @@ public class TaskEntity
         CreatedAt = createdAt;
     }
 
+    public void Update(string title, string description, TaskPriority priority, Guid? assigneeId)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ArgumentException("El titulo de la tarea es obligatorio.", nameof(title));
+
+        if (string.IsNullOrWhiteSpace(description))
+            throw new ArgumentException("La descripcion de la tarea es obligatoria.", nameof(description));
+
+        Title = title;
+        Description = description;
+        Priority = priority;
+        AssigneeId = assigneeId;
+    }
+
+    // Separado de Update a proposito (ver docs/decisions/arquitectura-decisiones.md §14.1):
+    // representa el traslado por drag&drop entre columnas u orden dentro de la misma,
+    // no la edicion de los datos de negocio de la tarea.
+    public void Move(Guid columnId, string order)
+    {
+        if (columnId == Guid.Empty)
+            throw new ArgumentException("La tarea debe pertenecer a una columna.", nameof(columnId));
+
+        if (string.IsNullOrWhiteSpace(order))
+            throw new ArgumentException("El orden de la tarea es obligatorio.", nameof(order));
+
+        ColumnId = columnId;
+        Order = order;
+    }
+
     public void Delete()
     {
         if (IsDeleted)

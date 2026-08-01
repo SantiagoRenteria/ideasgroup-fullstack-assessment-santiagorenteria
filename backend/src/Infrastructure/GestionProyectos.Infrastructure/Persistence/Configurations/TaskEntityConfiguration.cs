@@ -5,9 +5,6 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace GestionProyectos.Infrastructure.Persistence.Configurations;
 
-// Solo schema en Fase 2: habilita la regla "no borrar columna con tareas" (seccion 6.4)
-// contra una tabla real. El Application layer completo de tareas (Commands/Queries,
-// calculo LexoRank de Order) es Fase 3 -- ver docs/fases-implementacion.md.
 public class TaskEntityConfiguration : IEntityTypeConfiguration<TaskEntity>
 {
     public void Configure(EntityTypeBuilder<TaskEntity> builder)
@@ -58,7 +55,7 @@ public class TaskEntityConfiguration : IEntityTypeConfiguration<TaskEntity>
         // Restrict: mismo motivo que en ColumnConfiguration -- con soft delete un
         // DELETE fisico sobre columns nunca deberia ocurrir desde la app.
         builder.HasOne<Column>()
-            .WithMany()
+            .WithMany(c => c.Tasks)
             .HasForeignKey(t => t.ColumnId)
             .OnDelete(DeleteBehavior.Restrict);
 

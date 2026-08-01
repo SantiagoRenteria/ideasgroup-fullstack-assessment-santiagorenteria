@@ -1,0 +1,56 @@
+<p-dialog
+    [header]="isEditMode ? 'Editar tarea' : 'Nueva tarea'"
+    [(visible)]="visible"
+    [modal]="true"
+    [style]="{ width: '32rem' }"
+    [contentStyle]="{ 'max-height': '70vh', 'overflow-y': 'auto' }"
+    (onHide)="close()"
+>
+    <form [formGroup]="form" (ngSubmit)="save()">
+        <div class="field">
+            <label for="title">Título</label>
+            <input id="title" type="text" pInputText class="w-full" formControlName="title" />
+            <small class="p-error" *ngIf="submitted && form.get('title')?.invalid">El título es obligatorio.</small>
+        </div>
+
+        <div class="field">
+            <label for="description">Descripción</label>
+            <textarea id="description" pInputTextarea class="w-full" rows="3" formControlName="description"></textarea>
+            <small class="p-error" *ngIf="submitted && form.get('description')?.invalid">La descripción es obligatoria.</small>
+        </div>
+
+        <div class="formgrid grid">
+            <div class="field col">
+                <label for="priority">Prioridad</label>
+                <p-dropdown
+                    inputId="priority"
+                    class="w-full"
+                    [options]="priorityOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    formControlName="priority"
+                    appendTo="body"
+                ></p-dropdown>
+            </div>
+            <div class="field col">
+                <label for="assigneeId">Responsable</label>
+                <p-dropdown
+                    inputId="assigneeId"
+                    class="w-full"
+                    [options]="users"
+                    optionLabel="name"
+                    optionValue="id"
+                    [showClear]="true"
+                    placeholder="Sin asignar"
+                    formControlName="assigneeId"
+                    appendTo="body"
+                ></p-dropdown>
+            </div>
+        </div>
+    </form>
+
+    <ng-template pTemplate="footer">
+        <button pButton type="button" label="Cancelar" class="p-button-text" (click)="close()"></button>
+        <button pButton type="button" label="Guardar" [loading]="saving" (click)="save()"></button>
+    </ng-template>
+</p-dialog>

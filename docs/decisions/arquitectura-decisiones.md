@@ -277,3 +277,41 @@ Nota de transparencia: `LoginCommand` no escribe nada en la base de datos actual
 **Nota de transparencia — deuda parcialmente resuelta:** la sección 6 documentaba Serilog + OpenTelemetry (Aspire Dashboard) como decisión de observabilidad desde Fase 0, pero nunca se había implementado en código. El 2026-08-01 se implementó la mitad de bajo riesgo: **Serilog** con formato JSON compacto (`CompactJsonFormatter`) a consola, `UseSerilogRequestLogging()` para log estructurado por request, logger de bootstrap para capturar errores de arranque, y niveles configurables vía `appsettings.{Environment}.json` (`Serilog:MinimumLevel`, reemplazando la sección `Logging` por defecto). Sin dependencias nuevas en `docker-compose.yml` — sigue escribiendo a stdout del contenedor `api`, ya capturado por `docker compose logs`.
 
 **Sigue pendiente**: OpenTelemetry SDK + contenedor Aspire Dashboard como receptor OTLP. Se difiere a propósito porque agrega un servicio nuevo a `docker-compose.yml` (más superficie de fallo en el arranque limpio que exige la sección 12 del enunciado) y no aporta puntos directos en el rubro de evaluación (sección 10) frente al resto del backlog obligatorio (Fases 3-5) que sí los aporta. Se evalúa retomarlo en Fase 6 si el tiempo lo permite.
+
+---
+
+## 14. Diseño de Tareas y Tablero — decisiones previas a la implementación (Fase 3)
+
+Antes de escribir código de Fase 3 (CRUD de Tareas, tablero kanban, drag&drop, LexoRank), se resolvieron cuatro decisiones de diseño no cubiertas en detalle por las secciones anteriores. Se documentan aquí, confirmadas explícitamente antes de implementar (regla del flujo obligatorio de `CLAUDE.md`).
+
+### 14.1 `MoveTaskCommand` separado de `UpdateTaskCommand`
+
+**Decisión:** dos Commands distintos — `UpdateTaskCommand` (título, descripción, prioridad, responsable) y `MoveTaskCommand` (columna destino, nueva posición) — en vez de un único comando de actualización genérico que acepte todos los campos incluidos `ColumnId`/`Order`.
+
+**Por qué:** el propio enunciado (6.7) distingue "alta, edición y eliminación de tareas" de "traslado y nuevo orden" como dos categorías de evento separadas para la propagación en tiempo real. Modelar esa distinción ahora en el backend (Fase 3) evita un refactor en Fase 4, cuando cada Command necesitará disparar un evento SignalR distinto (`TaskUpdated` vs `TaskMoved`). También mantiene cada Handler con una responsabilidad más estrecha: `MoveTaskCommandHandler` solo recalcula posición/columna, sin validar los demás campos de negocio.
+
+**Alternativa descartada:** un `UpdateTaskCommand` único que acepte todos los campos como opcionales. Se descarta porque mezclaría dos intenciones de negocio distintas en un mismo Handler y complicaría la futura emisión de eventos diferenciados.
+
+### 14.2 Concurrencia optimista (`RowVersion`/`xmin`) diferida a Fase 4
+
+**Decisión:** `TaskEntity` no incorpora `RowVersion` en Fase 3. La reversión visible que exige 6.6 ("actualización optimista con reversión si el servidor responde con error") se cubre en esta fase con cualquier error HTTP normal (404 si la tarea fue borrada, 400 si la columna destino no es válida) — no requiere detección de conflicto de concurrencia real.
+
+**Por qué:** el escenario que de verdad ejercita la concurrencia optimista (dos sesiones moviendo la misma tarea al mismo tiempo, sección 6.7) depende de tener el canal de tiempo real operativo, que es Fase 4. Implementar `RowVersion` ahora exigiría una migración y lógica de detección de conflicto que no se puede probar de forma realista sin dos sesiones concurrentes — sería complejidad adelantada sin poder validarla. `docs/decisions/arquitectura-decisiones.md` §4 sigue vigente como diseño objetivo; esta entrada documenta cuándo se materializa.
+
+**Alternativa descartada:** implementar `RowVersion` ya en Fase 3 tal como lo describe el §4 original. Se descarta por ahora — no por estar mal, sino porque el momento correcto de implementarlo es cuando exista el escenario real que lo dispara (Fase 4), evitando código sin cobertura de prueba significativa en el ínterin.
+
+### 14.3 Navegación `Column.Tasks`
+
+**Decisión:** se agrega `IReadOnlyCollection<TaskEntity> Tasks` a `Column`, respaldada por una lista privada `_tasks`, siguiendo el mismo patrón ya usado en `Project.Columns`.
+
+**Por qué:** consistencia con el patrón existente (`Project` ya expone `Columns` de la misma forma) y necesidad real: el endpoint agregado de tablero (§14.4) necesita cargar columnas con sus tareas en una sola consulta (`Include`), y la navegación EF Core es la forma idiomática de expresar esa relación sin duplicarla como query suelta en cada Handler que la necesite.
+
+**Alternativa descartada:** resolver el tablero completo por consulta explícita combinando `IColumnRepository` + `ITaskRepository` sin navegación en la entidad. Se descarta porque Column ya tiene precedente de exponer su colección relacionada (Project↔Column) y romper esa consistencia solo para Task no tiene justificación adicional.
+
+### 14.4 Endpoint agregado `GET /api/projects/{id}/board`
+
+**Decisión:** se agrega un endpoint específico que devuelve, en una sola respuesta, las columnas del proyecto con sus tareas ya anidadas y ordenadas — en vez de que el frontend componga el tablero llamando a `GET /api/columns?projectId=` seguido de N llamadas `GET /api/tasks?columnId=` (una por columna).
+
+**Por qué:** el tablero es la vista principal de Fase 3 y se carga completa en cada visita/recarga (requisito 6.6: persistencia verificable al recargar). Una sola consulta EF Core proyectada (columnas + tareas vía `Include`, ordenadas por `Column.Order` y `TaskEntity.Order`) evita tanto el problema de N+1 peticiones HTTP como el riesgo de N+1 queries si se arma por columna. Los endpoints CRUD individuales de tareas (`POST/PUT/DELETE /api/tasks`) siguen existiendo para las mutaciones puntuales del tablero; el endpoint de `board` es de solo lectura, para la carga inicial y la recarga completa.
+
+**Alternativa descartada:** componer el tablero en el frontend combinando los endpoints ya existentes de columnas y tareas. Se descarta por el costo de N round-trips en tableros con varias columnas y porque duplicaría en el cliente una lógica de ensamblado que pertenece al servidor.

@@ -2,12 +2,15 @@ namespace GestionProyectos.Domain.Entities;
 
 public class Column
 {
+    private readonly List<TaskEntity> _tasks = [];
+
     public Guid Id { get; private set; }
     public Guid ProjectId { get; private set; }
     public string Name { get; private set; } = null!;
     public int Order { get; private set; }
     public bool IsDeleted { get; private set; }
     public DateTime? DeletedAt { get; private set; }
+    public IReadOnlyCollection<TaskEntity> Tasks => _tasks.AsReadOnly();
 
     private Column() { }
 
