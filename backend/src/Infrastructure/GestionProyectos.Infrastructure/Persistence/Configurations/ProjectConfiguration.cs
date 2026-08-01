@@ -1,4 +1,5 @@
 using GestionProyectos.Domain.Entities;
+using GestionProyectos.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -73,5 +74,18 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
         builder.HasIndex(p => p.Name, "ix_projects_name_unique")
             .IsUnique()
             .HasFilter("NOT is_deleted");
+
+        // Seed data extra (ver docs/decisions/arquitectura-decisiones.md §9): un proyecto
+        // de ejemplo con columnas y tareas precargadas para que el evaluador pueda ver el
+        // tablero, el tiempo real y los reportes sin crear datos manualmente primero. Fechas
+        // fijas (no relativas a "hoy") para que la migracion sea determinista.
+        builder.HasData(
+            new Project(
+                Guid.Parse("d0000000-0000-0000-0000-000000000001"),
+                "Proyecto Demo",
+                "Proyecto de ejemplo precargado por la migracion semilla para probar el tablero, el tiempo real y los reportes sin crear datos manualmente.",
+                new DateOnly(2026, 7, 1),
+                new DateOnly(2026, 12, 31),
+                ProjectStatus.InProgress));
     }
 }
