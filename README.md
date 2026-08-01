@@ -128,6 +128,7 @@ El detalle completo de cada decisión, sus alternativas evaluadas y por qué se 
 - Dos decisiones revertidas y documentadas como tal (no reescritas): identificadores de código en inglés (§12) y borrado de Proyecto — de hard delete en cascada a soft-delete + regla "no borrar con tareas" (§13).
 - Diseño de Tareas y Tablero (§14): `MoveTaskCommand` separado de `UpdateTaskCommand`, concurrencia optimista (`RowVersion`) diferida a Fase 4 a propósito, y endpoint agregado `GET /api/projects/{id}/board` en vez de componer el tablero en el frontend.
 - Diseño de Tiempo Real (§15): puerto `IBoardNotifier` en Application con adaptador SignalR en Infrastructure (no en API), concurrencia optimista con `xmin` materializada en esta fase, exclusión del propio emisor al notificar, y conexión con alcance de componente en el frontend.
+- Cierre de sesión con revocación real de JWT (§16): blocklist de tokens por `jti` (`POST /api/auth/logout` + `JwtBearerEvents.OnTokenValidated`), verificada en `revoked_tokens` — no exigido por el enunciado, decisión tomada al agregar el nombre del usuario y el botón de logout al nav.
 
 ---
 
@@ -173,8 +174,8 @@ Alternativas descartadas (índice entero secuencial, `float`, lista enlazada) y 
 
 | Capa | Cantidad | Cobertura |
 |---|---|---|
-| Backend (xUnit) | 99 | Domain (entidades, validaciones, soft-delete, `LexoRankService`), Application (handlers CQRS con NSubstitute, incluida la regla "no borrar con tareas", el rebalanceo de `MoveTaskCommandHandler`, la notificación por tiempo real con exclusión del emisor y el conflicto de concurrencia `xmin`), Infrastructure (BCrypt, JWT) |
-| Frontend (Jasmine/Karma) | 51 | `ProjectService`, `ColumnService`, `TaskService` (incluido el header `X-Realtime-Connection-Id`), `BoardService`, `UserService`, `RealtimeBoardService`, `ProjectFormComponent`, `BoardComponent` (reordenamiento optimista y reversión, y aplicación de los cuatro eventos remotos de tiempo real) |
+| Backend (xUnit) | 100 | Domain (entidades, validaciones, soft-delete, `LexoRankService`), Application (handlers CQRS con NSubstitute, incluida la regla "no borrar con tareas", el rebalanceo de `MoveTaskCommandHandler`, la notificación por tiempo real con exclusión del emisor, el conflicto de concurrencia `xmin` y la revocación de tokens en `LogoutCommandHandler`), Infrastructure (BCrypt, JWT) |
+| Frontend (Jasmine/Karma) | 56 | `ProjectService`, `ColumnService`, `TaskService` (incluido el header `X-Realtime-Connection-Id`), `BoardService`, `UserService`, `RealtimeBoardService`, `AuthService` (revocación en logout), `AuthInterceptor`, `ProjectFormComponent`, `AppTopBarComponent`, `BoardComponent` (reordenamiento optimista y reversión, y aplicación de los cuatro eventos remotos de tiempo real) |
 
 Mínimo exigido por el enunciado (sección 6.9): 5 backend + 5 frontend. Superado en ambas capas.
 
