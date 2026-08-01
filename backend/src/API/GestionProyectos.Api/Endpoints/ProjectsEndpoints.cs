@@ -1,5 +1,9 @@
-using GestionProyectos.Application.Projects;
-using GestionProyectos.Domain.Entities;
+using GestionProyectos.Application.Projects.Commands.CreateProject;
+using GestionProyectos.Application.Projects.Commands.DeleteProject;
+using GestionProyectos.Application.Projects.Commands.UpdateProject;
+using GestionProyectos.Application.Projects.Queries.GetProjectById;
+using GestionProyectos.Application.Projects.Queries.ListProjects;
+using GestionProyectos.Domain.Enums;
 using MediatR;
 
 namespace GestionProyectos.Api.Endpoints;

@@ -1,4 +1,7 @@
-using GestionProyectos.Application.Columns;
+using GestionProyectos.Application.Columns.Commands.CreateColumn;
+using GestionProyectos.Application.Columns.Commands.DeleteColumn;
+using GestionProyectos.Application.Columns.Commands.UpdateColumn;
+using GestionProyectos.Application.Columns.Queries.ListColumnsByProject;
 using MediatR;
 
 namespace GestionProyectos.Api.Endpoints;
