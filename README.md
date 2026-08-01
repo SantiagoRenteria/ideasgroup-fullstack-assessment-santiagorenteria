@@ -2,7 +2,7 @@
 
 Aplicativo web para la gestión de proyectos ágiles: proyectos, columnas configurables y tablero kanban con tiempo real, sobre .NET 8 (arquitectura hexagonal) + Angular 17 (PrimeNG/Sakai) + PostgreSQL.
 
-> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-01, al cierre de la Fase 3.
+> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-01, al cierre de la Fase 4.
 
 ---
 
@@ -32,7 +32,7 @@ Plan completo de 7 días en `docs/fases-implementacion.md`. Estado actual:
 | 1 | Autenticación JWT, hash salt+pepper, guard, interceptor | ✅ Completa |
 | 2 | CRUD de Proyectos y Columnas, paginación/filtro, soft-delete | ✅ Completa |
 | 3 | Tablero kanban, tareas, drag&drop, cálculo de posición (LexoRank) | ✅ Completa |
-| 4 | Tiempo real (SignalR) | ⏳ Pendiente |
+| 4 | Tiempo real (SignalR) | ✅ Completa |
 | 5 | Reportes duales (PDF/Excel) | ⏳ Pendiente |
 | 6 | Pruebas restantes, diagrama ERD, opcionales | ⏳ Pendiente |
 
@@ -87,7 +87,7 @@ El `.env.example` ya trae valores por defecto funcionales para un entorno de eva
 | Contenedores | Docker Compose (Postgres, API, SPA con nginx) |
 | Reporte PDF | QuestPDF *(Fase 5, pendiente)* |
 | Reporte Excel | ClosedXML *(Fase 5, pendiente)* |
-| Tiempo real | SignalR *(Fase 4, pendiente)* |
+| Tiempo real | SignalR |
 
 Detalle completo y alternativas descartadas: `docs/decisions/arquitectura-decisiones.md` §1.
 
@@ -127,12 +127,23 @@ El detalle completo de cada decisión, sus alternativas evaluadas y por qué se 
 - Por qué el JWT vive en memoria en el cliente, no en `localStorage` ni cookie.
 - Dos decisiones revertidas y documentadas como tal (no reescritas): identificadores de código en inglés (§12) y borrado de Proyecto — de hard delete en cascada a soft-delete + regla "no borrar con tareas" (§13).
 - Diseño de Tareas y Tablero (§14): `MoveTaskCommand` separado de `UpdateTaskCommand`, concurrencia optimista (`RowVersion`) diferida a Fase 4 a propósito, y endpoint agregado `GET /api/projects/{id}/board` en vez de componer el tablero en el frontend.
+- Diseño de Tiempo Real (§15): puerto `IBoardNotifier` en Application con adaptador SignalR en Infrastructure (no en API), concurrencia optimista con `xmin` materializada en esta fase, exclusión del propio emisor al notificar, y conexión con alcance de componente en el frontend.
 
 ---
 
 ## 6. Tiempo real
 
-**Pendiente (Fase 4).** Decisión ya tomada: **SignalR**, con grupos por `boardId`/`proyectoId`, canal autenticado con el mismo JWT de sesión. Alternativas descartadas (WebSocket crudo, SSE) y justificación completa: ADR §1 y §2.
+**SignalR**, con un grupo por tablero (`board-{proyectoId}`) y canal autenticado con el mismo JWT de sesión de la API REST. Alternativas descartadas (WebSocket crudo, SSE) y justificación de la elección de tecnología: ADR §1 y §2.
+
+**Arquitectura**: `IBoardNotifier` es un puerto en `Application`; el adaptador (`SignalRBoardNotifier` + `BoardHub`, ambos usando `IHubContext<BoardHub>`) vive en `Infrastructure`, junto al resto de adaptadores externos (EF Core, JWT) — nunca en `API`, que solo mapea la ruta del hub (`/hubs/board`). Los cuatro Command Handlers de Tareas (Create/Update/Delete/Move) dependen únicamente del puerto, sin conocer SignalR.
+
+**Autenticación del canal**: el cliente Angular no puede fijar el header `Authorization` en el handshake de WebSocket, así que el JWT se envía como query string (`access_token`) solo para rutas `/hubs/*`; el resto de la API sigue exigiendo el header Bearer normal (`JwtBearerEvents.OnMessageReceived` en `Infrastructure/DependencyInjection.cs`).
+
+**Eventos**: `TaskCreated`, `TaskUpdated`, `TaskDeleted`, `TaskMoved` — uno por cada Command ya separado desde la Fase 3 (ver §14.1 y §15.5 del ADR). El emisor de un cambio nunca recibe su propio evento de vuelta (`Clients.GroupExcept`, vía el header `X-Realtime-Connection-Id` que el frontend adjunta a sus mutaciones), porque ya actualizó su UI de forma optimista con la respuesta HTTP (mecanismo de la Fase 3, sección 6.6).
+
+**Concurrencia optimista**: `TaskEntity` mapea la columna de sistema `xmin` de PostgreSQL como token de concurrencia. Dos sesiones editando/moviendo la misma tarea al mismo tiempo — un escenario que solo se vuelve real una vez que hay tiempo real — hacen que la segunda en guardar reciba un 409, que dispara la misma reversión visible de 6.6 sin código adicional en el frontend. Detalle completo, incluida una corrección sobre el supuesto inicial de que no haría falta una migración: ADR §15.2.
+
+**Frontend**: la conexión SignalR tiene el mismo ciclo de vida que `BoardComponent` (se abre en `ngOnInit`, se cierra en `ngOnDestroy`) — no hay un servicio de sesión compartido — para que el cierre de conexión y suscripciones al salir del tablero (exigido por 6.7) sea trivialmente verificable. Detalle y alternativas descartadas: ADR §15.
 
 ---
 
@@ -162,8 +173,8 @@ Alternativas descartadas (índice entero secuencial, `float`, lista enlazada) y 
 
 | Capa | Cantidad | Cobertura |
 |---|---|---|
-| Backend (xUnit) | 92 | Domain (entidades, validaciones, soft-delete, `LexoRankService`), Application (handlers CQRS con NSubstitute, incluida la regla "no borrar con tareas" y el rebalanceo de `MoveTaskCommandHandler`), Infrastructure (BCrypt, JWT) |
-| Frontend (Jasmine/Karma) | 40 | `ProjectService`, `ColumnService`, `TaskService`, `BoardService`, `UserService`, `ProjectFormComponent`, `BoardComponent` (reordenamiento optimista y reversión) |
+| Backend (xUnit) | 99 | Domain (entidades, validaciones, soft-delete, `LexoRankService`), Application (handlers CQRS con NSubstitute, incluida la regla "no borrar con tareas", el rebalanceo de `MoveTaskCommandHandler`, la notificación por tiempo real con exclusión del emisor y el conflicto de concurrencia `xmin`), Infrastructure (BCrypt, JWT) |
+| Frontend (Jasmine/Karma) | 51 | `ProjectService`, `ColumnService`, `TaskService` (incluido el header `X-Realtime-Connection-Id`), `BoardService`, `UserService`, `RealtimeBoardService`, `ProjectFormComponent`, `BoardComponent` (reordenamiento optimista y reversión, y aplicación de los cuatro eventos remotos de tiempo real) |
 
 Mínimo exigido por el enunciado (sección 6.9): 5 backend + 5 frontend. Superado en ambas capas.
 
