@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using FluentValidation;
 using GestionProyectos.Api.Endpoints;
 using GestionProyectos.Application;
@@ -11,6 +12,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Enums (ProjectStatus, TaskPriority) legibles en JSON ("Planned") en vez de su valor
+// entero subyacente -- mas defendible en la respuesta de la API y en Swagger.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -58,5 +64,7 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 app.MapAuthEndpoints();
+app.MapProjectsEndpoints();
+app.MapColumnsEndpoints();
 
 app.Run();

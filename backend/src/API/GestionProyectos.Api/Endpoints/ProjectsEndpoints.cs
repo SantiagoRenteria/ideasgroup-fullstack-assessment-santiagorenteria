@@ -1,0 +1,69 @@
+using GestionProyectos.Application.Projects;
+using GestionProyectos.Domain.Entities;
+using MediatR;
+
+namespace GestionProyectos.Api.Endpoints;
+
+public static class ProjectsEndpoints
+{
+    public record CreateProjectRequest(string Name, string Description, DateOnly StartDate, DateOnly EndDate, ProjectStatus Status);
+    public record UpdateProjectRequest(string Name, string Description, DateOnly StartDate, DateOnly EndDate, ProjectStatus Status);
+
+    public static void MapProjectsEndpoints(this WebApplication app)
+    {
+        var group = app.MapGroup("/api/projects").WithTags("Projects").RequireAuthorization();
+
+        group.MapPost("/", async (CreateProjectRequest request, ISender sender, CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(
+                new CreateProjectCommand(request.Name, request.Description, request.StartDate, request.EndDate, request.Status),
+                cancellationToken);
+
+            return result.IsSuccess
+                ? Results.Created($"/api/projects/{result.Value!.Id}", result.Value)
+                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status400BadRequest);
+        });
+
+        group.MapGet("/", async (
+            ISender sender,
+            CancellationToken cancellationToken,
+            int page = 1,
+            int pageSize = 10,
+            string? name = null,
+            ProjectStatus? status = null) =>
+        {
+            var result = await sender.Send(new ListProjectsQuery(page, pageSize, name, status), cancellationToken);
+
+            return Results.Ok(result.Value);
+        });
+
+        group.MapGet("/{id:guid}", async (Guid id, ISender sender, CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(new GetProjectByIdQuery(id), cancellationToken);
+
+            return result.IsSuccess
+                ? Results.Ok(result.Value)
+                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+        });
+
+        group.MapPut("/{id:guid}", async (Guid id, UpdateProjectRequest request, ISender sender, CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(
+                new UpdateProjectCommand(id, request.Name, request.Description, request.StartDate, request.EndDate, request.Status),
+                cancellationToken);
+
+            return result.IsSuccess
+                ? Results.Ok(result.Value)
+                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+        });
+
+        group.MapDelete("/{id:guid}", async (Guid id, ISender sender, CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(new DeleteProjectCommand(id), cancellationToken);
+
+            return result.IsSuccess
+                ? Results.NoContent()
+                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+        });
+    }
+}
