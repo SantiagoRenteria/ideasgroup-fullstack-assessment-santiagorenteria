@@ -1,3 +1,4 @@
+using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Common;
 using MediatR;
@@ -9,16 +10,23 @@ public class MoveTaskCommandHandler : IRequestHandler<MoveTaskCommand, Result<Ta
     public const string TaskNotFound = "Tarea no encontrada.";
     public const string TargetColumnNotFound = "Columna destino no encontrada.";
     public const string TargetIndexOutOfRange = "La posicion destino esta fuera del rango de la columna.";
+    public const string ConcurrencyConflict = "La tarea fue modificada por otra sesión. Actualiza la vista e intenta de nuevo.";
 
     private readonly ITaskRepository _taskRepository;
     private readonly IColumnRepository _columnRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBoardNotifier _boardNotifier;
 
-    public MoveTaskCommandHandler(ITaskRepository taskRepository, IColumnRepository columnRepository, IUnitOfWork unitOfWork)
+    public MoveTaskCommandHandler(
+        ITaskRepository taskRepository,
+        IColumnRepository columnRepository,
+        IUnitOfWork unitOfWork,
+        IBoardNotifier boardNotifier)
     {
         _taskRepository = taskRepository;
         _columnRepository = columnRepository;
         _unitOfWork = unitOfWork;
+        _boardNotifier = boardNotifier;
     }
 
     public async Task<Result<TaskResponseDto>> Handle(MoveTaskCommand request, CancellationToken cancellationToken)
@@ -44,8 +52,18 @@ public class MoveTaskCommandHandler : IRequestHandler<MoveTaskCommand, Result<Ta
 
         task.Move(request.TargetColumnId, order);
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return Result<TaskResponseDto>.Failure(ConcurrencyConflict);
+        }
 
-        return Result<TaskResponseDto>.Success(task.ToDto());
+        var dto = task.ToDto();
+        await _boardNotifier.TaskMovedAsync(targetColumn.ProjectId, dto, request.TargetIndex, request.ConnectionId, cancellationToken);
+
+        return Result<TaskResponseDto>.Success(dto);
     }
 }

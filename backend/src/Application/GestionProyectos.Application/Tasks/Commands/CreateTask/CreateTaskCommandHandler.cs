@@ -12,12 +12,18 @@ public class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Resul
     private readonly IColumnRepository _columnRepository;
     private readonly ITaskRepository _taskRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBoardNotifier _boardNotifier;
 
-    public CreateTaskCommandHandler(IColumnRepository columnRepository, ITaskRepository taskRepository, IUnitOfWork unitOfWork)
+    public CreateTaskCommandHandler(
+        IColumnRepository columnRepository,
+        ITaskRepository taskRepository,
+        IUnitOfWork unitOfWork,
+        IBoardNotifier boardNotifier)
     {
         _columnRepository = columnRepository;
         _taskRepository = taskRepository;
         _unitOfWork = unitOfWork;
+        _boardNotifier = boardNotifier;
     }
 
     public async Task<Result<TaskResponseDto>> Handle(CreateTaskCommand request, CancellationToken cancellationToken)
@@ -45,6 +51,9 @@ public class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Resul
         await _taskRepository.AddAsync(task, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Result<TaskResponseDto>.Success(task.ToDto());
+        var dto = task.ToDto();
+        await _boardNotifier.TaskCreatedAsync(column.ProjectId, dto, request.ConnectionId, cancellationToken);
+
+        return Result<TaskResponseDto>.Success(dto);
     }
 }
