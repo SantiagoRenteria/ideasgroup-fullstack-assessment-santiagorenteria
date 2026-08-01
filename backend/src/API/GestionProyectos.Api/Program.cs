@@ -113,6 +113,9 @@ try
     app.MapAuthEndpoints();
     app.MapProjectsEndpoints();
     app.MapColumnsEndpoints();
+    app.MapTasksEndpoints();
+    app.MapBoardEndpoints();
+    app.MapUsersEndpoints();
 
     app.Run();
 }
