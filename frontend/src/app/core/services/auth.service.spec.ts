@@ -1,3 +1,4 @@
+import { HttpClient } from '@angular/common/http';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
@@ -10,6 +11,10 @@ describe('AuthService', () => {
     let router: jasmine.SpyObj<Router>;
 
     beforeEach(() => {
+        // Los specs comparten la misma pagina de Karma: sessionStorage persiste entre
+        // tests si no se limpia explicitamente (a diferencia de una variable de instancia).
+        sessionStorage.clear();
+
         const routerSpy = jasmine.createSpyObj('Router', ['navigate']);
 
         TestBed.configureTestingModule({
@@ -104,5 +109,20 @@ describe('AuthService', () => {
 
         httpMock.expectNone(`${environment.apiUrl}/auth/logout`);
         expect(router.navigate).toHaveBeenCalledWith(['/auth/login']);
+    });
+
+    // ADR §17: sessionStorage (no memoria pura) para sobrevivir a recargar la pagina --
+    // una instancia nueva del servicio simula el estado tras un F5.
+    it('una instancia nueva del servicio recupera la sesion desde sessionStorage (sobrevive a recargar la pagina)', () => {
+        sessionStorage.setItem('gestion_proyectos_token', 'jwt-de-prueba');
+        sessionStorage.setItem('gestion_proyectos_user', JSON.stringify({ name: 'Administrador', email: 'admin@ideasgroup.test' }));
+
+        const freshService = new AuthService(TestBed.inject(HttpClient), router);
+        let emittedUser: unknown;
+        freshService.currentUser$.subscribe((user) => (emittedUser = user));
+
+        expect(freshService.isAuthenticated()).toBeTrue();
+        expect(freshService.getToken()).toBe('jwt-de-prueba');
+        expect(emittedUser).toEqual({ name: 'Administrador', email: 'admin@ideasgroup.test' });
     });
 });

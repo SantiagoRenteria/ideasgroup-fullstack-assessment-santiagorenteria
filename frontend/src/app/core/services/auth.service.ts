@@ -7,11 +7,13 @@ import { LoginResponse, UserSession } from '../models/user-session.model';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-    // El token vive solo en memoria (no localStorage ni cookie): se pierde al recargar
-    // la pagina a proposito, ver docs/decisions/arquitectura-decisiones.md §7.
-    private token: string | null = null;
+    // sessionStorage (no localStorage): sobrevive a recargar la pagina pero se pierde al
+    // cerrar la pestana/navegador -- decision revisada durante la Fase 4, ver
+    // docs/decisions/arquitectura-decisiones.md §17 (originalmente memoria pura, §7).
+    private static readonly TOKEN_KEY = 'gestion_proyectos_token';
+    private static readonly USER_KEY = 'gestion_proyectos_user';
 
-    private currentUserSubject = new BehaviorSubject<UserSession | null>(null);
+    private currentUserSubject = new BehaviorSubject<UserSession | null>(this.readStoredUser());
     currentUser$ = this.currentUserSubject.asObservable();
 
     constructor(private http: HttpClient, private router: Router) {}
@@ -19,8 +21,10 @@ export class AuthService {
     login(email: string, password: string): Observable<void> {
         return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/login`, { email, password }).pipe(
             tap((response) => {
-                this.token = response.token;
-                this.currentUserSubject.next({ name: response.name, email: response.email });
+                const user: UserSession = { name: response.name, email: response.email };
+                sessionStorage.setItem(AuthService.TOKEN_KEY, response.token);
+                sessionStorage.setItem(AuthService.USER_KEY, JSON.stringify(user));
+                this.currentUserSubject.next(user);
             }),
             map(() => void 0)
         );
@@ -31,9 +35,10 @@ export class AuthService {
     // redirige al login tanto si la llamada tiene exito como si falla -- un logout no debe
     // dejar al usuario atrapado por un problema de red.
     logout(): void {
-        const hadToken = this.token !== null;
+        const hadToken = this.getToken() !== null;
         const finish = () => {
-            this.token = null;
+            sessionStorage.removeItem(AuthService.TOKEN_KEY);
+            sessionStorage.removeItem(AuthService.USER_KEY);
             this.currentUserSubject.next(null);
             this.router.navigate(['/auth/login']);
         };
@@ -46,10 +51,15 @@ export class AuthService {
     }
 
     getToken(): string | null {
-        return this.token;
+        return sessionStorage.getItem(AuthService.TOKEN_KEY);
     }
 
     isAuthenticated(): boolean {
-        return this.token !== null;
+        return this.getToken() !== null;
+    }
+
+    private readStoredUser(): UserSession | null {
+        const raw = sessionStorage.getItem(AuthService.USER_KEY);
+        return raw ? (JSON.parse(raw) as UserSession) : null;
     }
 }
