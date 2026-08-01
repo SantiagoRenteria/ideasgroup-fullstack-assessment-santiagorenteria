@@ -18,4 +18,10 @@ public class UserRepository : IUserRepository
         _dbContext.Users
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+
+    public async Task<IReadOnlyList<User>> ListAllAsync(CancellationToken cancellationToken) =>
+        await _dbContext.Users
+            .AsNoTracking()
+            .OrderBy(u => u.Name)
+            .ToListAsync(cancellationToken);
 }
