@@ -102,13 +102,16 @@ describe('ProjectFormComponent', () => {
         expect(component.minStartDate).toBeNull();
     });
 
-    it('save() con formulario invalido no llama al servicio', () => {
+    it('save() con formulario invalido no llama al servicio y avisa con un toast', () => {
         openDialog(null);
+        const messageService = TestBed.inject(MessageService);
+        spyOn(messageService, 'add');
 
         component.save();
 
         expect(projectService.create).not.toHaveBeenCalled();
         expect(component.submitted).toBeTrue();
+        expect(messageService.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'warn' }));
     });
 
     it('save() en modo creacion con formulario valido llama a create, emite saved y cierra el dialog', () => {
