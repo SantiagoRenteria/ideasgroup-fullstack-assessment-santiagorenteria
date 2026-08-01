@@ -182,6 +182,23 @@ Vive localmente, fuera de control de versiones (regla de confidencialidad, secci
 | Columnas | `snake_case` | `column_id`, `created_at` |
 | Índices | `ix_{tabla}_{columnas}` | `ix_tasks_column_id_order` |
 
+**Estructura de carpetas en Application** (fijada durante Fase 2, 2026-08-01): dentro de cada feature (`Projects/`, `Columns/`), los Commands y las Queries se separan en subcarpetas propias, y cada operación individual vive en su propia carpeta con su Command/Query + Handler + Validator:
+
+```
+Application/Projects/
+├── Commands/
+│   ├── CreateProject/   (CreateProjectCommand.cs, ...Handler.cs, ...Validator.cs)
+│   ├── UpdateProject/
+│   └── DeleteProject/
+├── Queries/
+│   ├── GetProjectById/
+│   └── ListProjects/
+├── ProjectResponseDto.cs          (compartido por Commands y Queries)
+└── ProjectMappingExtensions.cs
+```
+
+El namespace seguía la carpeta completa (`GestionProyectos.Application.Projects.Commands.CreateProject`), igual que ya se hace en `Domain/Entities`, `Domain/Enums`, `Domain/Common`. Motivo: con CQRS declarado como decisión de arquitectura (ADR §3), la separación lectura/escritura debe ser visible en la carpeta, no solo en el sufijo del nombre de clase. `Application/Auth/` (Fase 1) todavía no sigue este patrón — queda pendiente como retrofit propio, fuera del alcance de Fase 2, igual que se hizo con el retrofit de idioma.
+
 ### 7.2 Frontend (Angular 17)
 
 | Elemento | Convención | Ejemplo |

@@ -1,3 +1,5 @@
+using GestionProyectos.Domain.Enums;
+
 namespace GestionProyectos.Domain.Entities;
 
 // Nombrada TaskEntity (no Task) para evitar colision con System.Threading.Tasks.Task,

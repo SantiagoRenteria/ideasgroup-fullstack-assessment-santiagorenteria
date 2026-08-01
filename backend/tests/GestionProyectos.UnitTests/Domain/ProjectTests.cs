@@ -1,4 +1,5 @@
 using GestionProyectos.Domain.Entities;
+using GestionProyectos.Domain.Enums;
 using Xunit;
 
 namespace GestionProyectos.UnitTests.Domain;

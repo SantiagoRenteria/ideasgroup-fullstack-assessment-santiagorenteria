@@ -1,3 +1,5 @@
+using GestionProyectos.Domain.Enums;
+
 namespace GestionProyectos.Domain.Entities;
 
 public class Project

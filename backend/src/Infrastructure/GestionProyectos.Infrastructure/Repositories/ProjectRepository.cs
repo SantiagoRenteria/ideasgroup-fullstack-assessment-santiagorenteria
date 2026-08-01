@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Entities;
+using GestionProyectos.Domain.Enums;
 using GestionProyectos.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
