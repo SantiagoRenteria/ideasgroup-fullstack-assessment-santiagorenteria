@@ -363,3 +363,21 @@ Antes de escribir código de Fase 4 (canal en tiempo real, sección 6.7 del enun
 **Decisión:** cuatro eventos, uno por operación de negocio ya separada en Application (§14.1): `TaskCreated`, `TaskUpdated`, `TaskDeleted`, `TaskMoved`. Los tres primeros llevan el `TaskResponseDto` ya existente (mismo shape que la API REST); `TaskDeleted` lleva solo `{ taskId, columnId }` (no hay DTO de una entidad borrada); `TaskMoved` lleva `{ taskId, targetColumnId, targetIndex, order }` — el índice que el propio emisor ya usó para calcular la posición, para que las demás sesiones apliquen el mismo `moveItemInArray`/`transferArrayItem` que ya usa `BoardComponent.onDrop` en vez de recalcular posiciones a partir del string de orden.
 
 **Por qué:** reutilizar los DTOs y el vocabulario de eventos que ya distingue Update de Move (§14.1) evita introducir un segundo modelo de datos solo para tiempo real. Enviar `targetIndex` (no solo `order`) permite que el frontend aplique el mismo código de reordenamiento de array que ya tiene y ya está probado (`board.component.spec.ts`), en vez de escribir una segunda función que reconstruya el índice a partir de la clave LexoRank.
+
+---
+
+## 16. Cierre de sesión con revocación real de JWT
+
+No exigido por el enunciado, pedido explícitamente durante la Fase 4 (mostrar el usuario logueado en el nav y un logout que invalide el token). Se presentaron dos alcances antes de implementar: (a) limpiar el token solo en el cliente (lo que `AuthService.logout()` ya hacía) o (b) revocación real en servidor. Se confirmó (b).
+
+**Decisión:** blocklist de JWT revocados por `jti`. `POST /api/auth/logout` (autenticado) lee el `jti` y el `exp` del propio token de la petición y los persiste; `JwtBearerEvents.OnTokenValidated` (Infrastructure) rechaza cualquier request cuyo `jti` esté en la blocklist, en cada endpoint protegido **y** en el hub de SignalR (comparten la misma configuración de `AddJwtBearer`, ver §15).
+
+**Por qué un `jti` no es un token completo:** revocar por `jti` (un identificador corto, no el JWT completo) evita que la blocklist crezca con strings largos y evita tener que parsear/comparar el token entero en cada request — el middleware de validación ya expone los claims decodificados, `jti` incluido.
+
+**Dónde vive la entidad de revocación:** `RevokedToken` (Infrastructure/Persistence/Entities, **no** `Domain/Entities`) — es un registro técnico de seguridad sin reglas de negocio propias (no tiene invariantes, no participa de ningún caso de uso de negocio), a diferencia de `User`/`Project`/`Column`/`TaskEntity`. Coherente con cómo `IPasswordHasher`/`IJwtTokenGenerator` ya se tratan como infraestructura de seguridad y no como dominio.
+
+**Alternativa descartada — limpieza periódica de tokens expirados:** la tabla `revoked_tokens` no tiene un job de limpieza en background. Se acepta el crecimiento no acotado (bajo, con 2 usuarios semilla y tokens de corta duración) en vez de agregar un `BackgroundService` adicional; `ExpiresAtUtc` se persiste igual, dejando la puerta abierta a un `DELETE WHERE expires_at < now()` si el volumen real lo justificara.
+
+**Alternativa descartada — refresh tokens:** resolvería la revocación de forma más "estándar" (access token de vida muy corta + refresh token de vida larga, revocable), pero es una reestructuración completa del flujo de autenticación (nuevo endpoint, nuevo almacenamiento, rotación) no pedida y fuera de alcance para un cierre de sesión explícito por parte del usuario.
+
+**Frontend:** `AuthService.logout()` llama a `POST /api/auth/logout` (si hay token) y limpia el estado local en memoria y navega al login tanto si la llamada tiene éxito como si falla — un fallo de red en el logout no debe dejar al usuario atrapado en una sesión que ya quiere cerrar. `AuthInterceptor` excluye `/auth/logout` (además de `/auth/login`, ya excluido) del logout automático por 401, para no disparar una segunda llamada de logout recursiva si el propio logout devuelve 401.
