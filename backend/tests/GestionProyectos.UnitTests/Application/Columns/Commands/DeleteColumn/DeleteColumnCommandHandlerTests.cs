@@ -23,7 +23,7 @@ public class DeleteColumnCommandHandlerTests
         var result = await handler.Handle(new DeleteColumnCommand(column.Id), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        _columnRepository.Received(1).Remove(column);
+        Assert.True(column.IsDeleted);
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -42,7 +42,7 @@ public class DeleteColumnCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(DeleteColumnCommandHandler.ColumnHasTasks, result.Error);
-        _columnRepository.DidNotReceive().Remove(Arg.Any<Column>());
+        Assert.False(column.IsDeleted);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 

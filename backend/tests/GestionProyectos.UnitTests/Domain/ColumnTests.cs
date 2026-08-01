@@ -79,4 +79,24 @@ public class ColumnTests
 
         Assert.Equal(0, column.Order);
     }
+
+    [Fact]
+    public void Delete_MarcaIsDeletedYDeletedAt()
+    {
+        var column = new Column(Guid.NewGuid(), Guid.NewGuid(), "Por hacer", 0);
+
+        column.Delete();
+
+        Assert.True(column.IsDeleted);
+        Assert.NotNull(column.DeletedAt);
+    }
+
+    [Fact]
+    public void Delete_SiYaEstaEliminada_LanzaExcepcion()
+    {
+        var column = new Column(Guid.NewGuid(), Guid.NewGuid(), "Por hacer", 0);
+        column.Delete();
+
+        Assert.Throws<InvalidOperationException>(() => column.Delete());
+    }
 }

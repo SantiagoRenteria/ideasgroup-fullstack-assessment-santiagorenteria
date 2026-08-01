@@ -154,7 +154,7 @@ El endpoint resuelve por inyección de `IEnumerable<IReportExporter>`, nunca por
 | Tipo de "Responsable" en Tarea | FK nullable a Usuario | Habilita filtro por responsable (deseable 7) sin texto libre frágil; nullable permite backlog sin asignar |
 | Valores de `Estado` de Proyecto | Planificado / EnProgreso / Completado / Cancelado | Enum fijo, sin máquina de transiciones (no exigido, evita scope creep) |
 | Valores de `Prioridad` de Tarea | Baja / Media / Alta / Urgente | Enum fijo |
-| Borrado de Proyecto con contenido | Hard delete en cascada dentro de transacción (Tareas → Columnas → Proyecto), con confirmación explícita en UI | Soft-delete añade filtros globales de query sin estar exigido; se documenta el trade-off |
+| Borrado de Proyecto con contenido | **Decisión superada, ver §13** — originalmente hard delete en cascada; revisado a soft-delete + regla "no borrar si tiene tareas" durante Fase 2 | Ver §13 para el detalle y la justificación del cambio |
 | Dónde vive el cálculo de posición | Backend autoritativo (LexoRank); frontend reordena array localmente para optimistic update | Evita duplicar lógica de negocio crítica en dos lenguajes |
 | Almacenamiento del JWT en cliente | Memoria (variable de servicio Angular), no localStorage ni httpOnly cookie | El enunciado (6.2) exige un interceptor que **adjunte** el token manualmente — una cookie httpOnly se envía automáticamente y no requeriría interceptor, por lo que el propio diseño del enunciado indica token accesible desde JS |
 | Mapeo Entity↔DTO | Manual, centralizado en métodos de extensión por entidad | Explícito y defendible, sin duplicación inline en cada Handler |
@@ -251,3 +251,27 @@ Nota de transparencia: `LoginCommand` no escribe nada en la base de datos actual
 **Alternativa descartada:** mantener el dominio en español solo por fidelidad literal al enunciado, aceptando la mezcla de idiomas. Se descarta porque el enunciado (sección 9) exige justificar decisiones, y "porque el PDF usa esas palabras" no es una justificación técnica defendible frente a la inconsistencia que genera.
 
 **Retrofit de Fase 0-1:** `Usuario` → `User`, `Correo` → `Email`, `Nombre` → `Name`, tabla `usuarios` → `users`, columnas `correo`/`nombre` → `email`/`name`, `LoginCommand(string Correo, string Password)` → `LoginCommand(string Email, string Password)`. Requiere regenerar la migración `InitialCreate` (aún no hay datos reales en ningún entorno del evaluador, así que no hay migración de datos que preservar) y actualizar el frontend (`UsuarioSesion`, campo `correo` en los modelos de auth). Se ejecuta como rama `fix/rename-domain-to-english` con PR propio, separada de `feature/projects-columns` (Fase 2), para no mezclar un renombrado mecánico con funcionalidad nueva en el mismo commit.
+
+---
+
+## 13. Borrado de Proyecto — revisión de la decisión inicial (Fase 2)
+
+**Decisión superada** (no se borra, se documenta el cambio — regla de este archivo): la sección 7 originalmente establecía hard delete en cascada (Tareas → Columnas → Proyecto) para el borrado de un Proyecto con contenido, vía `ON DELETE CASCADE` a nivel de FK, justificado porque "soft-delete añade filtros globales de query sin estar exigido".
+
+**Decisión nueva (2026-08-01):** dos cambios, decididos juntos durante la implementación del CRUD de Fase 2:
+
+1. **Regla de negocio nueva:** no se permite eliminar un Proyecto que contenga tareas (en cualquiera de sus columnas) — mismo criterio ya exigido por el enunciado (sección 6.4) para Columna, extendido a Proyecto. `DeleteProjectCommandHandler` devuelve 409 si `IColumnRepository.ProjectHasTasksAsync` es verdadero.
+2. **Soft-delete en Project, Column y TaskEntity** (no en User — no existe ninguna operación de borrado de usuario en el proyecto, así que agregar `IsDeleted` ahí sería scope creep sin caso de uso real). Cada entidad tiene `IsDeleted`/`DeletedAt` y un método de dominio `Delete()`. `HasQueryFilter(e => !e.IsDeleted)` en cada `IEntityTypeConfiguration` excluye automáticamente las filas borradas de toda consulta LINQ, sin repetir el filtro en cada Handler.
+
+**Por qué se revierte:**
+- El trade-off original (filtros globales de query) sigue siendo real, pero se acepta ahora como costo consciente: mantener un historial de qué se borró y cuándo (auditoría) pesa más que la complejidad que añade, una vez que ya existe precedente de manejar una regla de bloqueo similar en Columna.
+- Con la regla de negocio del punto 1 ya vigente, `DeleteProjectCommandHandler` nunca cascada sobre Tareas reales (si las hay, el borrado se bloquea antes) — el soft-delete en cascada solo alcanza a Columnas vacías, lo que simplifica la implementación real frente al caso general.
+
+**Implementación:**
+- FK `Column → Project` y `TaskEntity → Column` cambian de `Cascade` a `Restrict`: con soft-delete, la app nunca debe emitir un `DELETE` físico sobre estas tablas: un `Restrict` actúa como red de seguridad a nivel de base de datos ante ese caso, en vez de propagarlo silenciosamente si ocurriera por error o por acceso directo a la BD.
+- El borrado de un Proyecto marca el proyecto (`SaveChanges`) y sus columnas (`ExecuteUpdateAsync` en bloque, sin cargar cada entidad a memoria) dentro de una transacción explícita (`IUnitOfWork.ExecuteInTransactionAsync`) — son dos escrituras separadas que antes eran una sola sentencia `DELETE ... CASCADE`, y se preserva la misma garantía de atomicidad.
+- Índices únicos (ej. `ix_users_email`) no se ven afectados porque User queda fuera del alcance de este cambio.
+
+**Alternativa descartada:** definir "tareas en curso" (en vez de "cualquier tarea") como condición de bloqueo del borrado de Proyecto. Se descarta por ahora porque `TaskEntity` no tiene un campo de estado — en un Kanban, el estado de una tarea *es* la columna en la que vive, y `Column` todavía no distingue cuál columna representa "completado" (no hay flag `IsTerminal` ni equivalente). Añadir esa distinción es una decisión de modelo que pertenece a Fase 3, cuando se termina de definir el comportamiento de `Task`/`Column` en profundidad — hacerlo ahora habría sido adelantar diseño sin la información completa del tablero.
+
+**Nota de transparencia — deuda pendiente:** `docs/decisions/arquitectura-decisiones.md` §6 documenta Serilog + OpenTelemetry (Aspire Dashboard) como decisión de observabilidad desde Fase 0, pero nunca se implementó en código — ni paquetes NuGet, ni configuración en `Program.cs`, ni el contenedor en `docker-compose.yml`. Detectado durante la revisión de Fase 2. Queda pendiente, evaluar si se resuelve antes de Fase 6 (buffer/documentación) o se prioriza contra el resto del backlog obligatorio, que pesa más en la evaluación (sección 10 del enunciado).

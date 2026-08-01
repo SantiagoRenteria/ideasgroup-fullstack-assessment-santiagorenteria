@@ -45,10 +45,21 @@ public class TaskEntityConfiguration : IEntityTypeConfiguration<TaskEntity>
             .HasColumnName("created_at")
             .IsRequired();
 
+        builder.Property(t => t.IsDeleted)
+            .HasColumnName("is_deleted")
+            .IsRequired();
+
+        builder.Property(t => t.DeletedAt)
+            .HasColumnName("deleted_at");
+
+        builder.HasQueryFilter(t => !t.IsDeleted);
+
+        // Restrict: mismo motivo que en ColumnConfiguration -- con soft delete un
+        // DELETE fisico sobre columns nunca deberia ocurrir desde la app.
         builder.HasOne<Column>()
             .WithMany()
             .HasForeignKey(t => t.ColumnId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne<User>()
             .WithMany()

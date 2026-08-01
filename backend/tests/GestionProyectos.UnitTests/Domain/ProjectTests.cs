@@ -76,4 +76,24 @@ public class ProjectTests
         Assert.Equal(ProjectStatus.Planned, project.Status);
         Assert.Equal(End, project.EndDate);
     }
+
+    [Fact]
+    public void Delete_MarcaIsDeletedYDeletedAt()
+    {
+        var project = new Project(Guid.NewGuid(), "Nombre", "Descripcion", Start, End, ProjectStatus.Planned);
+
+        project.Delete();
+
+        Assert.True(project.IsDeleted);
+        Assert.NotNull(project.DeletedAt);
+    }
+
+    [Fact]
+    public void Delete_SiYaEstaEliminado_LanzaExcepcion()
+    {
+        var project = new Project(Guid.NewGuid(), "Nombre", "Descripcion", Start, End, ProjectStatus.Planned);
+        project.Delete();
+
+        Assert.Throws<InvalidOperationException>(() => project.Delete());
+    }
 }

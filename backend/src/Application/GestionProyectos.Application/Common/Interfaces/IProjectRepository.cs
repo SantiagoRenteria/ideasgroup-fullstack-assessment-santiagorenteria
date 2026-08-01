@@ -15,6 +15,4 @@ public interface IProjectRepository
         CancellationToken cancellationToken);
 
     Task AddAsync(Project project, CancellationToken cancellationToken);
-
-    void Remove(Project project);
 }

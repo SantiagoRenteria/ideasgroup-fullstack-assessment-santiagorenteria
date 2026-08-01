@@ -6,6 +6,8 @@ public class Column
     public Guid ProjectId { get; private set; }
     public string Name { get; private set; } = null!;
     public int Order { get; private set; }
+    public bool IsDeleted { get; private set; }
+    public DateTime? DeletedAt { get; private set; }
 
     private Column() { }
 
@@ -40,5 +42,14 @@ public class Column
             throw new ArgumentException("El orden de la columna no puede ser negativo.", nameof(order));
 
         Order = order;
+    }
+
+    public void Delete()
+    {
+        if (IsDeleted)
+            throw new InvalidOperationException("La columna ya fue eliminada.");
+
+        IsDeleted = true;
+        DeletedAt = DateTime.UtcNow;
     }
 }

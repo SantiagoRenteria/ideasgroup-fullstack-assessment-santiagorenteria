@@ -15,6 +15,8 @@ public class TaskEntity
     public Guid? AssigneeId { get; private set; }
     public string Order { get; private set; } = null!;
     public DateTime CreatedAt { get; private set; }
+    public bool IsDeleted { get; private set; }
+    public DateTime? DeletedAt { get; private set; }
 
     private TaskEntity() { }
 
@@ -48,5 +50,14 @@ public class TaskEntity
         AssigneeId = assigneeId;
         Order = order;
         CreatedAt = createdAt;
+    }
+
+    public void Delete()
+    {
+        if (IsDeleted)
+            throw new InvalidOperationException("La tarea ya fue eliminada.");
+
+        IsDeleted = true;
+        DeletedAt = DateTime.UtcNow;
     }
 }
