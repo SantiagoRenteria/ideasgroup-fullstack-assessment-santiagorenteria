@@ -22,6 +22,9 @@ public static class DependencyInjection
         services.Configure<SecurityOptions>(configuration.GetSection(SecurityOptions.SectionName));
 
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IProjectRepository, ProjectRepository>();
+        services.AddScoped<IColumnRepository, ColumnRepository>();
+        services.AddScoped<IUnitOfWork, Persistence.UnitOfWork>();
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 

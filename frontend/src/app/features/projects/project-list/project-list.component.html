@@ -1,0 +1,79 @@
+<div class="card">
+    <p-toast></p-toast>
+    <p-confirmDialog></p-confirmDialog>
+
+    <div class="flex justify-content-between align-items-center mb-4 gap-2 flex-wrap">
+        <h5 class="m-0">Proyectos</h5>
+        <div class="flex gap-2 align-items-center flex-wrap">
+            <span class="p-input-icon-left">
+                <i class="pi pi-search"></i>
+                <input
+                    type="text"
+                    pInputText
+                    placeholder="Buscar por nombre..."
+                    [(ngModel)]="nameFilter"
+                    (ngModelChange)="onFilterChange()"
+                />
+            </span>
+            <p-dropdown
+                [options]="statusOptions"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Todos los estados"
+                [showClear]="true"
+                [(ngModel)]="statusFilter"
+                (ngModelChange)="onFilterChange()"
+            ></p-dropdown>
+            <button pButton type="button" icon="pi pi-plus" label="Nuevo proyecto" (click)="openNew()"></button>
+        </div>
+    </div>
+
+    <p-table
+        [value]="projects"
+        [lazy]="true"
+        (onLazyLoad)="onLazyLoad($event)"
+        [paginator]="true"
+        [rows]="pageSize"
+        [totalRecords]="totalRecords"
+        [loading]="loading"
+        [rowsPerPageOptions]="[10, 20, 50]"
+        dataKey="id"
+    >
+        <ng-template pTemplate="header">
+            <tr>
+                <th>Nombre</th>
+                <th>Fecha inicio</th>
+                <th>Fecha fin prevista</th>
+                <th>Estado</th>
+                <th style="width: 10rem"></th>
+            </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-project>
+            <tr>
+                <td>{{ project.name }}</td>
+                <td>{{ project.startDate }}</td>
+                <td>{{ project.endDate }}</td>
+                <td>{{ statusLabels[project.status] }}</td>
+                <td>
+                    <button pButton type="button" icon="pi pi-table" class="p-button-text" pTooltip="Columnas" (click)="openColumns(project)"></button>
+                    <button pButton type="button" icon="pi pi-pencil" class="p-button-text" pTooltip="Editar" (click)="openEdit(project)"></button>
+                    <button pButton type="button" icon="pi pi-trash" class="p-button-text p-button-danger" pTooltip="Eliminar" (click)="confirmDelete(project)"></button>
+                </td>
+            </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+            <tr>
+                <td colspan="5" class="text-center py-4">No hay proyectos que coincidan con el filtro.</td>
+            </tr>
+        </ng-template>
+    </p-table>
+</div>
+
+<app-project-form [visible]="formVisible" [project]="editingProject" (visibleChange)="formVisible = $event" (saved)="load()"></app-project-form>
+
+<app-project-columns
+    [visible]="columnsVisible"
+    [projectId]="columnsProjectId"
+    [projectName]="columnsProjectName"
+    (visibleChange)="columnsVisible = $event"
+></app-project-columns>
