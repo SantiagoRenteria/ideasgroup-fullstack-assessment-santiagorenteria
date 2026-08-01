@@ -26,10 +26,23 @@ export class AuthService {
         );
     }
 
+    // Revocacion real en servidor (no solo limpieza en el cliente): ver
+    // docs/decisions/arquitectura-decisiones.md §16. El estado local se limpia y se
+    // redirige al login tanto si la llamada tiene exito como si falla -- un logout no debe
+    // dejar al usuario atrapado por un problema de red.
     logout(): void {
-        this.token = null;
-        this.currentUserSubject.next(null);
-        this.router.navigate(['/auth/login']);
+        const hadToken = this.token !== null;
+        const finish = () => {
+            this.token = null;
+            this.currentUserSubject.next(null);
+            this.router.navigate(['/auth/login']);
+        };
+
+        if (hadToken) {
+            this.http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({ next: finish, error: finish });
+        } else {
+            finish();
+        }
     }
 
     getToken(): string | null {

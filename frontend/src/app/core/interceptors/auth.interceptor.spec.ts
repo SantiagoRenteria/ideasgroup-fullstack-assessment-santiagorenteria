@@ -67,4 +67,16 @@ describe('AuthInterceptor', () => {
 
         expect(authService.logout).not.toHaveBeenCalled();
     });
+
+    it('ante un 401 del propio logout, no vuelve a disparar logout (evita una llamada recursiva)', () => {
+        authService.getToken.and.returnValue('jwt-ya-revocado');
+
+        http.post('/api/auth/logout', {}).subscribe({ error: () => {} });
+
+        httpMock
+            .expectOne('/api/auth/logout')
+            .flush({ error: 'sesion ya cerrada' }, { status: 401, statusText: 'Unauthorized' });
+
+        expect(authService.logout).not.toHaveBeenCalled();
+    });
 });

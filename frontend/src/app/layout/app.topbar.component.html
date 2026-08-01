@@ -17,13 +17,13 @@
             <i class="pi pi-calendar"></i>
             <span>Calendar</span>
         </button>
-        <button class="p-link layout-topbar-button">
+        <button class="p-link layout-topbar-button" disabled>
             <i class="pi pi-user"></i>
-            <span>Profile</span>
+            <span>{{ (authService.currentUser$ | async)?.name ?? 'Invitado' }}</span>
         </button>
-        <button class="p-link layout-topbar-button" [routerLink]="'/documentation'">
-            <i class="pi pi-cog"></i>
-            <span>Settings</span>
+        <button class="p-link layout-topbar-button" (click)="authService.logout()">
+            <i class="pi pi-sign-out"></i>
+            <span>Cerrar sesión</span>
         </button>
     </div>
 </div>

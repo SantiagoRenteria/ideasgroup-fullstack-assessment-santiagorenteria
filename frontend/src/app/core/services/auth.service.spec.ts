@@ -64,9 +64,13 @@ describe('AuthService', () => {
         req.flush({ error: 'Correo o contraseña incorrectos.' }, { status: 401, statusText: 'Unauthorized' });
     });
 
-    it('logout limpia el token, el usuario actual y redirige al login', (done) => {
+    it('logout revoca el token en el servidor, limpia el estado local y redirige al login', (done) => {
         service.login('admin@ideasgroup.test', 'IdeasGroup2026!').subscribe(() => {
             service.logout();
+
+            const logoutReq = httpMock.expectOne(`${environment.apiUrl}/auth/logout`);
+            expect(logoutReq.request.method).toBe('POST');
+            logoutReq.flush({});
 
             expect(service.isAuthenticated()).toBeFalse();
             expect(service.getToken()).toBeNull();
@@ -77,5 +81,28 @@ describe('AuthService', () => {
         httpMock
             .expectOne(`${environment.apiUrl}/auth/login`)
             .flush({ token: 'jwt-de-prueba', expiresAtUtc: '2026-08-01T00:00:00Z', name: 'Administrador', email: 'admin@ideasgroup.test' });
+    });
+
+    it('logout limpia el estado local aunque la revocacion en el servidor falle (sin dejar al usuario atrapado)', (done) => {
+        service.login('admin@ideasgroup.test', 'IdeasGroup2026!').subscribe(() => {
+            service.logout();
+
+            httpMock.expectOne(`${environment.apiUrl}/auth/logout`).flush({ error: 'error de red' }, { status: 500, statusText: 'Server Error' });
+
+            expect(service.isAuthenticated()).toBeFalse();
+            expect(router.navigate).toHaveBeenCalledWith(['/auth/login']);
+            done();
+        });
+
+        httpMock
+            .expectOne(`${environment.apiUrl}/auth/login`)
+            .flush({ token: 'jwt-de-prueba', expiresAtUtc: '2026-08-01T00:00:00Z', name: 'Administrador', email: 'admin@ideasgroup.test' });
+    });
+
+    it('logout sin sesion activa no llama al backend, solo redirige', () => {
+        service.logout();
+
+        httpMock.expectNone(`${environment.apiUrl}/auth/logout`);
+        expect(router.navigate).toHaveBeenCalledWith(['/auth/login']);
     });
 });
