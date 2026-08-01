@@ -32,7 +32,7 @@ public class DeleteColumnCommandHandler : IRequestHandler<DeleteColumnCommand, R
         if (await _columnRepository.HasTasksAsync(column.Id, cancellationToken))
             return Result.Failure(ColumnHasTasks);
 
-        _columnRepository.Remove(column);
+        column.Delete();
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();

@@ -79,9 +79,16 @@ public static class ProjectsEndpoints
         {
             var result = await sender.Send(new DeleteProjectCommand(id), cancellationToken);
 
-            return result.IsSuccess
-                ? Results.NoContent()
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+            if (result.IsSuccess)
+                return Results.NoContent();
+
+            // "Tiene tareas" es un conflicto de estado (409), distinto de "no encontrado"
+            // (404) -- mismo patron que DELETE /api/columns/{id}.
+            var statusCode = result.Error == DeleteProjectCommandHandler.ProjectHasTasks
+                ? StatusCodes.Status409Conflict
+                : StatusCodes.Status404NotFound;
+
+            return Results.Json(new { error = result.Error }, statusCode: statusCode);
         });
     }
 }

@@ -58,4 +58,24 @@ public class TaskEntityTests
         Assert.Throws<ArgumentException>(() =>
             new TaskEntity(Guid.NewGuid(), Guid.NewGuid(), "Titulo", "Descripcion", TaskPriority.Low, null, "", DateTime.UtcNow));
     }
+
+    [Fact]
+    public void Delete_MarcaIsDeletedYDeletedAt()
+    {
+        var task = CreateValid();
+
+        task.Delete();
+
+        Assert.True(task.IsDeleted);
+        Assert.NotNull(task.DeletedAt);
+    }
+
+    [Fact]
+    public void Delete_SiYaEstaEliminada_LanzaExcepcion()
+    {
+        var task = CreateValid();
+        task.Delete();
+
+        Assert.Throws<InvalidOperationException>(() => task.Delete());
+    }
 }

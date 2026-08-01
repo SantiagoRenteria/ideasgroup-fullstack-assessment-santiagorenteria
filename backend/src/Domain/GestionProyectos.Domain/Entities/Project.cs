@@ -12,6 +12,8 @@ public class Project
     public DateOnly StartDate { get; private set; }
     public DateOnly EndDate { get; private set; }
     public ProjectStatus Status { get; private set; }
+    public bool IsDeleted { get; private set; }
+    public DateTime? DeletedAt { get; private set; }
     public IReadOnlyCollection<Column> Columns => _columns.AsReadOnly();
 
     private Project() { }
@@ -57,5 +59,14 @@ public class Project
         StartDate = startDate;
         EndDate = endDate;
         Status = status;
+    }
+
+    public void Delete()
+    {
+        if (IsDeleted)
+            throw new InvalidOperationException("El proyecto ya fue eliminado.");
+
+        IsDeleted = true;
+        DeletedAt = DateTime.UtcNow;
     }
 }

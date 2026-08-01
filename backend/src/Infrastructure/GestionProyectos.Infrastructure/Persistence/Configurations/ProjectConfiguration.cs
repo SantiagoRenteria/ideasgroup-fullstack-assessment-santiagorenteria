@@ -36,6 +36,18 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .HasColumnName("status")
             .IsRequired();
 
+        builder.Property(p => p.IsDeleted)
+            .HasColumnName("is_deleted")
+            .IsRequired();
+
+        builder.Property(p => p.DeletedAt)
+            .HasColumnName("deleted_at");
+
+        // Soft delete (ver docs/decisions/arquitectura-decisiones.md §7): las filas
+        // marcadas is_deleted quedan invisibles para toda consulta LINQ por defecto,
+        // sin tener que repetir el filtro en cada Handler.
+        builder.HasQueryFilter(p => !p.IsDeleted);
+
         // Coincidencia parcial por nombre (enunciado seccion 6.3) via ILIKE '%texto%': un
         // B-tree estandar no lo optimiza, se necesita el indice GIN de pg_trgm (ver
         // docs/decisions/arquitectura-decisiones.md §9). La extension se habilita en

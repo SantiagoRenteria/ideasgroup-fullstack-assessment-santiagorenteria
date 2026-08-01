@@ -27,8 +27,18 @@ public class ColumnRepository : IColumnRepository
     public Task<bool> HasTasksAsync(Guid columnId, CancellationToken cancellationToken) =>
         _dbContext.Tasks.AsNoTracking().AnyAsync(t => t.ColumnId == columnId, cancellationToken);
 
+    public Task<bool> ProjectHasTasksAsync(Guid projectId, CancellationToken cancellationToken) =>
+        _dbContext.Tasks
+            .AsNoTracking()
+            .AnyAsync(t => _dbContext.Columns.Any(c => c.Id == t.ColumnId && c.ProjectId == projectId), cancellationToken);
+
     public async Task AddAsync(Column column, CancellationToken cancellationToken) =>
         await _dbContext.Columns.AddAsync(column, cancellationToken);
 
-    public void Remove(Column column) => _dbContext.Columns.Remove(column);
+    public async Task SoftDeleteByProjectAsync(Guid projectId, CancellationToken cancellationToken) =>
+        await _dbContext.Columns
+            .Where(c => c.ProjectId == projectId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(c => c.IsDeleted, true)
+                .SetProperty(c => c.DeletedAt, DateTime.UtcNow), cancellationToken);
 }
