@@ -1,0 +1,30 @@
+.route-loading-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    width: 100%;
+    z-index: 9999;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.08);
+
+    &::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -30%;
+        height: 100%;
+        width: 30%;
+        background: var(--primary-color, #2196f3);
+        animation: route-loading-slide 1s ease-in-out infinite;
+    }
+}
+
+@keyframes route-loading-slide {
+    0% {
+        left: -30%;
+    }
+    100% {
+        left: 100%;
+    }
+}
