@@ -333,10 +333,15 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("GestionProyectos.Domain.Entities.Column", null)
-                        .WithMany()
+                        .WithMany("Tasks")
                         .HasForeignKey("ColumnId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GestionProyectos.Domain.Entities.Column", b =>
+                {
+                    b.Navigation("Tasks");
                 });
 
             modelBuilder.Entity("GestionProyectos.Domain.Entities.Project", b =>
