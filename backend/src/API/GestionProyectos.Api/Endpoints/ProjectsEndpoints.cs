@@ -34,9 +34,23 @@ public static class ProjectsEndpoints
             int page = 1,
             int pageSize = 10,
             string? name = null,
-            ProjectStatus? status = null) =>
+            string? status = null) =>
         {
-            var result = await sender.Send(new ListProjectsQuery(page, pageSize, name, status), cancellationToken);
+            // string? en vez de ProjectStatus? a proposito: el binding nativo de enums
+            // en query string devuelve 400 ante "status=" (presente pero vacio), que es
+            // como un cliente HTTP tipico representa "sin filtro" al limpiar un combo.
+            // Solo se rechaza un valor realmente invalido (ej. "status=Foo").
+            ProjectStatus? statusFilter = null;
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                if (!Enum.TryParse<ProjectStatus>(status, ignoreCase: true, out var parsedStatus))
+                    return Results.Json(new { error = "El estado del proyecto no es válido." }, statusCode: StatusCodes.Status400BadRequest);
+
+                statusFilter = parsedStatus;
+            }
+
+            var result = await sender.Send(new ListProjectsQuery(page, pageSize, name, statusFilter), cancellationToken);
 
             return Results.Ok(result.Value);
         });
