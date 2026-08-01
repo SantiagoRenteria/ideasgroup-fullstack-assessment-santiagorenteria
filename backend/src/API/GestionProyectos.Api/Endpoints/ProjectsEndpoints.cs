@@ -23,9 +23,15 @@ public static class ProjectsEndpoints
                 new CreateProjectCommand(request.Name, request.Description, request.StartDate, request.EndDate, request.Status),
                 cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Created($"/api/projects/{result.Value!.Id}", result.Value)
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status400BadRequest);
+            if (result.IsSuccess)
+                return Results.Created($"/api/projects/{result.Value!.Id}", result.Value);
+
+            // Nombre duplicado es un conflicto de estado (409), no un error de formato (400).
+            var statusCode = result.Error == CreateProjectCommandHandler.DuplicateName
+                ? StatusCodes.Status409Conflict
+                : StatusCodes.Status400BadRequest;
+
+            return Results.Json(new { error = result.Error }, statusCode: statusCode);
         });
 
         group.MapGet("/", async (
@@ -70,9 +76,16 @@ public static class ProjectsEndpoints
                 new UpdateProjectCommand(id, request.Name, request.Description, request.StartDate, request.EndDate, request.Status),
                 cancellationToken);
 
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+            if (result.IsSuccess)
+                return Results.Ok(result.Value);
+
+            var statusCode = result.Error switch
+            {
+                UpdateProjectCommandHandler.DuplicateName => StatusCodes.Status409Conflict,
+                _ => StatusCodes.Status404NotFound
+            };
+
+            return Results.Json(new { error = result.Error }, statusCode: statusCode);
         });
 
         group.MapDelete("/{id:guid}", async (Guid id, ISender sender, CancellationToken cancellationToken) =>

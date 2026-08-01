@@ -18,6 +18,12 @@ public class ProjectRepository : IProjectRepository
     public Task<Project?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
         _dbContext.Projects.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
 
+    public Task<bool> ExistsByNameAsync(string name, Guid? excludeProjectId, CancellationToken cancellationToken) =>
+        _dbContext.Projects
+            .AsNoTracking()
+            .Where(p => excludeProjectId == null || p.Id != excludeProjectId)
+            .AnyAsync(p => EF.Functions.ILike(p.Name, name), cancellationToken);
+
     public async Task<(IReadOnlyList<Project> Items, int TotalCount)> ListAsync(
         int page,
         int pageSize,

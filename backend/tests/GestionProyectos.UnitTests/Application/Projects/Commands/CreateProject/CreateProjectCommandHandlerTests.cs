@@ -26,4 +26,21 @@ public class CreateProjectCommandHandlerTests
         await _projectRepository.Received(1).AddAsync(Arg.Any<Project>(), Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task Handle_ConNombreYaExistente_RetornaFailureYNoCrea()
+    {
+        _projectRepository.ExistsByNameAsync("Migracion ERP", null, Arg.Any<CancellationToken>()).Returns(true);
+
+        var handler = new CreateProjectCommandHandler(_projectRepository, _unitOfWork);
+        var command = new CreateProjectCommand(
+            "Migracion ERP", "Descripcion", new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30), ProjectStatus.Planned);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(CreateProjectCommandHandler.DuplicateName, result.Error);
+        await _projectRepository.DidNotReceive().AddAsync(Arg.Any<Project>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
 }

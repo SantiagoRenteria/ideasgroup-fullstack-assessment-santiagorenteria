@@ -1,4 +1,5 @@
 using GestionProyectos.Domain.Entities;
+using GestionProyectos.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -48,13 +49,43 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
         // sin tener que repetir el filtro en cada Handler.
         builder.HasQueryFilter(p => !p.IsDeleted);
 
+        // Dos indices distintos sobre la misma columna: se nombran directamente en HasIndex
+        // (no solo via HasDatabaseName encadenado) porque EF Core identifica un indice por
+        // su lista de propiedades -- sin el nombre explicito aqui, la segunda llamada a
+        // HasIndex(p => p.Name) reconfigura la MISMA entrada de metadata en vez de crear
+        // una nueva, y el "unique" terminaba fusionado con el metodo "gin" del primero
+        // (Postgres no permite indices unicos con access method gin).
+
         // Coincidencia parcial por nombre (enunciado seccion 6.3) via ILIKE '%texto%': un
         // B-tree estandar no lo optimiza, se necesita el indice GIN de pg_trgm (ver
         // docs/decisions/arquitectura-decisiones.md §9). La extension se habilita en
         // AppDbContext.OnModelCreating.
-        builder.HasIndex(p => p.Name)
+        builder.HasIndex(p => p.Name, "ix_projects_name_trgm")
             .HasMethod("gin")
-            .HasOperators("gin_trgm_ops")
-            .HasDatabaseName("ix_projects_name_trgm");
+            .HasOperators("gin_trgm_ops");
+
+        // Defensa en profundidad contra la condicion de carrera de dos altas simultaneas
+        // con el mismo nombre (la comprobacion real, case-insensitive, vive en
+        // CreateProjectCommandHandler/UpdateProjectCommandHandler via ExistsByNameAsync).
+        // Case-sensitive porque un indice unico por expresion (lower(name)) no es soportado
+        // directamente por el Fluent API de EF Core; se acepta el trade-off documentado aqui.
+        // Filtrado a filas activas: sin esto, reutilizar el nombre de un proyecto ya borrado
+        // logicamente violaria la restriccion aunque la app lo permita.
+        builder.HasIndex(p => p.Name, "ix_projects_name_unique")
+            .IsUnique()
+            .HasFilter("NOT is_deleted");
+
+        // Seed data extra (ver docs/decisions/arquitectura-decisiones.md §9): un proyecto
+        // de ejemplo con columnas y tareas precargadas para que el evaluador pueda ver el
+        // tablero, el tiempo real y los reportes sin crear datos manualmente primero. Fechas
+        // fijas (no relativas a "hoy") para que la migracion sea determinista.
+        builder.HasData(
+            new Project(
+                Guid.Parse("d0000000-0000-0000-0000-000000000001"),
+                "Proyecto Demo",
+                "Proyecto de ejemplo precargado por la migracion semilla para probar el tablero, el tiempo real y los reportes sin crear datos manualmente.",
+                new DateOnly(2026, 7, 1),
+                new DateOnly(2026, 12, 31),
+                ProjectStatus.InProgress));
     }
 }

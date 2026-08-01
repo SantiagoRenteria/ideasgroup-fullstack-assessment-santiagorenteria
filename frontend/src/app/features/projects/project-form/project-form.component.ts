@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { FormBuilder, FormGroup, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { MessageService } from 'primeng/api';
@@ -14,6 +15,25 @@ function endDateNotBeforeStartDate(): ValidatorFn {
         }
 
         return new Date(end) < new Date(start) ? { endDateBeforeStartDate: true } : null;
+    };
+}
+
+function todayWithoutTime(): Date {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+}
+
+// Solo se aplica al crear (ver ngOnChanges): permitir que un proyecto ya iniciado
+// mantenga su fecha de inicio original al editarlo, en vez de bloquear la edicion
+// de cualquier proyecto cuya fecha de inicio ya haya pasado.
+function startDateNotInPast(): ValidatorFn {
+    return (control): ValidationErrors | null => {
+        if (!control.value) {
+            return null;
+        }
+
+        return new Date(control.value) < todayWithoutTime() ? { startDateInPast: true } : null;
     };
 }
 
@@ -54,6 +74,15 @@ export class ProjectFormComponent implements OnChanges {
         return this.project !== null;
     }
 
+    // Propiedad estable (no un getter): [minDate] en p-calendar espera la MISMA
+    // referencia de Date entre ciclos de deteccion de cambios. Un getter que hace
+    // "new Date()" en cada llamada le devuelve un objeto distinto en cada tick de
+    // Angular, y PrimeNG reacciona a eso reprocesando el calendario en cada ciclo --
+    // el sintoma visible es que el picker no deja completar la seleccion de una fecha.
+    // Sin restriccion en modo edicion: un proyecto ya iniciado conserva su fecha de
+    // inicio real, aunque ya haya pasado.
+    minStartDate: Date | null = null;
+
     ngOnChanges(changes: SimpleChanges): void {
         if (changes['visible'] && this.visible) {
             this.submitted = false;
@@ -64,6 +93,14 @@ export class ProjectFormComponent implements OnChanges {
                 endDate: this.project ? new Date(this.project.endDate) : null,
                 status: this.project?.status ?? ProjectStatus.Planned
             });
+
+            this.minStartDate = this.isEditMode ? null : todayWithoutTime();
+
+            const startDateControl = this.form.get('startDate')!;
+            startDateControl.setValidators(
+                this.isEditMode ? [Validators.required] : [Validators.required, startDateNotInPast()]
+            );
+            startDateControl.updateValueAndValidity({ emitEvent: false });
         }
     }
 
@@ -71,6 +108,14 @@ export class ProjectFormComponent implements OnChanges {
         this.submitted = true;
 
         if (this.form.invalid) {
+            // Antes fallaba en silencio: el unico indicio era el texto rojo bajo el
+            // campo, facil de pasar por alto si no esta a la vista. Un toast asegura
+            // que siempre haya alguna señal de que "Guardar" no hizo nada.
+            this.messageService.add({
+                severity: 'warn',
+                summary: 'Revisá el formulario',
+                detail: 'Hay campos obligatorios o inválidos antes de poder guardar.'
+            });
             return;
         }
 
@@ -99,9 +144,10 @@ export class ProjectFormComponent implements OnChanges {
                 this.saved.emit();
                 this.close();
             },
-            error: () => {
+            error: (err: HttpErrorResponse) => {
                 this.saving = false;
-                this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No se pudo guardar el proyecto' });
+                const detail = err.error?.error ?? 'No se pudo guardar el proyecto';
+                this.messageService.add({ severity: 'error', summary: 'Error', detail });
             }
         });
     }

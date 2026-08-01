@@ -47,5 +47,11 @@ public class ColumnConfiguration : IEntityTypeConfiguration<Column>
         // renderizado del tablero en Fase 3 (ix_columns_project_id_order).
         builder.HasIndex(c => new { c.ProjectId, c.Order })
             .HasDatabaseName("ix_columns_project_id_order");
+
+        // Columnas del proyecto de ejemplo (ver ProjectConfiguration.HasData).
+        builder.HasData(
+            new Column(Guid.Parse("d1000000-0000-0000-0000-000000000001"), Guid.Parse("d0000000-0000-0000-0000-000000000001"), "Por hacer", 0),
+            new Column(Guid.Parse("d1000000-0000-0000-0000-000000000002"), Guid.Parse("d0000000-0000-0000-0000-000000000001"), "En progreso", 1),
+            new Column(Guid.Parse("d1000000-0000-0000-0000-000000000003"), Guid.Parse("d0000000-0000-0000-0000-000000000001"), "Hecho", 2));
     }
 }

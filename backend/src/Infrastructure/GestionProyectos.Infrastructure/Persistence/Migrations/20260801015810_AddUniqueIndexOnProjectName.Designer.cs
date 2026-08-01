@@ -3,6 +3,7 @@ using System;
 using GestionProyectos.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace GestionProyectos.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260801015810_AddUniqueIndexOnProjectName")]
+    partial class AddUniqueIndexOnProjectName
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -57,32 +60,6 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_columns_project_id_order");
 
                     b.ToTable("columns", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("d1000000-0000-0000-0000-000000000001"),
-                            IsDeleted = false,
-                            Name = "Por hacer",
-                            Order = 0,
-                            ProjectId = new Guid("d0000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("d1000000-0000-0000-0000-000000000002"),
-                            IsDeleted = false,
-                            Name = "En progreso",
-                            Order = 1,
-                            ProjectId = new Guid("d0000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("d1000000-0000-0000-0000-000000000003"),
-                            IsDeleted = false,
-                            Name = "Hecho",
-                            Order = 2,
-                            ProjectId = new Guid("d0000000-0000-0000-0000-000000000001")
-                        });
                 });
 
             modelBuilder.Entity("GestionProyectos.Domain.Entities.Project", b =>
@@ -135,18 +112,6 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
                         .HasFilter("NOT is_deleted");
 
                     b.ToTable("projects", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("d0000000-0000-0000-0000-000000000001"),
-                            Description = "Proyecto de ejemplo precargado por la migracion semilla para probar el tablero, el tiempo real y los reportes sin crear datos manualmente.",
-                            EndDate = new DateOnly(2026, 12, 31),
-                            IsDeleted = false,
-                            Name = "Proyecto Demo",
-                            StartDate = new DateOnly(2026, 7, 1),
-                            Status = 1
-                        });
                 });
 
             modelBuilder.Entity("GestionProyectos.Domain.Entities.TaskEntity", b =>
@@ -205,67 +170,6 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_tasks_column_id_order");
 
                     b.ToTable("tasks", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("d2000000-0000-0000-0000-000000000001"),
-                            AssigneeId = new Guid("6f9b1c2e-1a2b-4c3d-8e4f-000000000001"),
-                            ColumnId = new Guid("d1000000-0000-0000-0000-000000000001"),
-                            CreatedAt = new DateTime(2026, 7, 2, 9, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Bocetos iniciales de las pantallas principales del tablero.",
-                            IsDeleted = false,
-                            Order = "m",
-                            Priority = 2,
-                            Title = "Diseñar wireframes"
-                        },
-                        new
-                        {
-                            Id = new Guid("d2000000-0000-0000-0000-000000000002"),
-                            AssigneeId = new Guid("6f9b1c2e-1a2b-4c3d-8e4f-000000000002"),
-                            ColumnId = new Guid("d1000000-0000-0000-0000-000000000001"),
-                            CreatedAt = new DateTime(2026, 7, 3, 9, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Listar las funcionalidades minimas para el primer release.",
-                            IsDeleted = false,
-                            Order = "t",
-                            Priority = 1,
-                            Title = "Definir alcance del MVP"
-                        },
-                        new
-                        {
-                            Id = new Guid("d2000000-0000-0000-0000-000000000003"),
-                            AssigneeId = new Guid("6f9b1c2e-1a2b-4c3d-8e4f-000000000001"),
-                            ColumnId = new Guid("d1000000-0000-0000-0000-000000000002"),
-                            CreatedAt = new DateTime(2026, 7, 5, 9, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "JWT, guardia de ruta e interceptor con manejo de 401.",
-                            IsDeleted = false,
-                            Order = "m",
-                            Priority = 3,
-                            Title = "Implementar login"
-                        },
-                        new
-                        {
-                            Id = new Guid("d2000000-0000-0000-0000-000000000004"),
-                            ColumnId = new Guid("d1000000-0000-0000-0000-000000000002"),
-                            CreatedAt = new DateTime(2026, 7, 8, 9, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Paginacion y filtro por nombre resuelto en el servidor.",
-                            IsDeleted = false,
-                            Order = "t",
-                            Priority = 2,
-                            Title = "CRUD de proyectos"
-                        },
-                        new
-                        {
-                            Id = new Guid("d2000000-0000-0000-0000-000000000005"),
-                            AssigneeId = new Guid("6f9b1c2e-1a2b-4c3d-8e4f-000000000002"),
-                            ColumnId = new Guid("d1000000-0000-0000-0000-000000000003"),
-                            CreatedAt = new DateTime(2026, 7, 1, 9, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Arquitectura hexagonal, Angular con Sakai y docker-compose.",
-                            IsDeleted = false,
-                            Order = "m",
-                            Priority = 0,
-                            Title = "Cimientos del proyecto"
-                        });
                 });
 
             modelBuilder.Entity("GestionProyectos.Domain.Entities.User", b =>

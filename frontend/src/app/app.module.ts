@@ -1,6 +1,7 @@
 import { NgModule } from '@angular/core';
 import { HashLocationStrategy, LocationStrategy } from '@angular/common';
 import { HTTP_INTERCEPTORS } from '@angular/common/http';
+import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { AppComponent } from './app.component';
 import { AppRoutingModule } from './app-routing.module';
 import { AppLayoutModule } from './layout/app.layout.module';
@@ -20,7 +21,8 @@ import { AuthInterceptor } from './core/interceptors/auth.interceptor';
     ],
     imports: [
         AppRoutingModule,
-        AppLayoutModule
+        AppLayoutModule,
+        ProgressSpinnerModule
     ],
     providers: [
         { provide: LocationStrategy, useClass: HashLocationStrategy },
