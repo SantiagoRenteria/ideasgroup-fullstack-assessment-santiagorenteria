@@ -3,10 +3,11 @@ import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { Board } from '../models/board.model';
 import { BoardTask, TaskPriority } from '../models/task.model';
 import { BoardService } from '../services/board.service';
+import { RealtimeBoardService, TaskDeletedPayload, TaskMovedPayload } from '../services/realtime-board.service';
 import { TaskService } from '../services/task.service';
 import { BoardComponent } from './board.component';
 
@@ -15,6 +16,10 @@ describe('BoardComponent', () => {
     let fixture: ComponentFixture<BoardComponent>;
     let boardService: jasmine.SpyObj<BoardService>;
     let taskService: jasmine.SpyObj<TaskService>;
+    let taskCreated$: Subject<BoardTask>;
+    let taskUpdated$: Subject<BoardTask>;
+    let taskDeleted$: Subject<TaskDeletedPayload>;
+    let taskMoved$: Subject<TaskMovedPayload>;
 
     function createTask(id: string, columnId: string, order: string): BoardTask {
         return { id, columnId, title: `Tarea ${id}`, description: 'Desc', priority: TaskPriority.Medium, assigneeId: null, order, createdAt: '2026-07-01T00:00:00Z' };
@@ -36,11 +41,27 @@ describe('BoardComponent', () => {
         taskService = jasmine.createSpyObj('TaskService', ['move', 'delete']);
         boardService.getByProject.and.returnValue(of(buildBoard()));
 
+        taskCreated$ = new Subject<BoardTask>();
+        taskUpdated$ = new Subject<BoardTask>();
+        taskDeleted$ = new Subject<TaskDeletedPayload>();
+        taskMoved$ = new Subject<TaskMovedPayload>();
+        const realtimeService = {
+            connect: () => Promise.resolve(),
+            joinBoard: () => Promise.resolve(),
+            leaveBoard: () => Promise.resolve(),
+            disconnect: () => Promise.resolve(),
+            taskCreated$,
+            taskUpdated$,
+            taskDeleted$,
+            taskMoved$
+        };
+
         await TestBed.configureTestingModule({
             declarations: [BoardComponent],
             providers: [
                 { provide: BoardService, useValue: boardService },
                 { provide: TaskService, useValue: taskService },
+                { provide: RealtimeBoardService, useValue: realtimeService },
                 { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ projectId: 'proj-1' }) } } },
                 ConfirmationService,
                 MessageService
@@ -142,5 +163,53 @@ describe('BoardComponent', () => {
 
         expect(taskService.delete).toHaveBeenCalledWith(task.id);
         expect(component.board!.columns[0].tasks.find((t) => t.id === task.id)).toBeUndefined();
+    });
+
+    // Seccion 6.7: eventos que llegan de otra sesion del mismo tablero deben actualizar el
+    // estado local sin recarga manual.
+    it('un TaskCreated recibido por el canal agrega la tarea a la columna correspondiente', () => {
+        fixture.detectChanges();
+
+        taskCreated$.next(createTask('t4', 'col-2', 'b'));
+
+        expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t3', 't4']);
+    });
+
+    it('un TaskUpdated recibido por el canal reemplaza la tarea en su columna', () => {
+        fixture.detectChanges();
+
+        const updated = { ...createTask('t1', 'col-1', 'a'), title: 'Titulo editado por otra sesion' };
+        taskUpdated$.next(updated);
+
+        expect(component.board!.columns[0].tasks[0].title).toBe('Titulo editado por otra sesion');
+    });
+
+    it('un TaskDeleted recibido por el canal quita la tarea de su columna', () => {
+        fixture.detectChanges();
+
+        taskDeleted$.next({ taskId: 't1', columnId: 'col-1' });
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t2']);
+    });
+
+    it('un TaskMoved recibido por el canal traslada la tarea entre columnas en el indice indicado', () => {
+        fixture.detectChanges();
+
+        const movedTask = createTask('t1', 'col-2', 'ab');
+        taskMoved$.next({ task: movedTask, targetIndex: 0 });
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t2']);
+        expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t1', 't3']);
+    });
+
+    it('ngOnDestroy deja el tablero y cierra la conexion de tiempo real', () => {
+        fixture.detectChanges();
+        const realtimeService = TestBed.inject(RealtimeBoardService);
+        spyOn(realtimeService, 'leaveBoard').and.returnValue(Promise.resolve());
+        spyOn(realtimeService, 'disconnect').and.returnValue(Promise.resolve());
+
+        component.ngOnDestroy();
+
+        expect(realtimeService.leaveBoard).toHaveBeenCalledWith('proj-1');
     });
 });

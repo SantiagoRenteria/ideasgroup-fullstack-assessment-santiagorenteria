@@ -1,9 +1,11 @@
 import { CdkDragDrop, moveItemInArray, transferArrayItem } from '@angular/cdk/drag-drop';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
+import { Subscription } from 'rxjs';
 import { Board, BoardColumn } from '../models/board.model';
 import { BoardTask, TASK_PRIORITY_LABELS, TASK_PRIORITY_SEVERITY } from '../models/task.model';
+import { RealtimeBoardService, TaskDeletedPayload, TaskMovedPayload } from '../services/realtime-board.service';
 import { BoardService } from '../services/board.service';
 import { TaskService } from '../services/task.service';
 
@@ -13,7 +15,7 @@ import { TaskService } from '../services/task.service';
     styleUrls: ['./board.component.scss'],
     providers: [ConfirmationService, MessageService]
 })
-export class BoardComponent implements OnInit {
+export class BoardComponent implements OnInit, OnDestroy {
     board: Board | null = null;
     loading = false;
 
@@ -25,11 +27,13 @@ export class BoardComponent implements OnInit {
     readonly prioritySeverity = TASK_PRIORITY_SEVERITY;
 
     private projectId!: string;
+    private readonly realtimeSubscriptions: Subscription[] = [];
 
     constructor(
         private route: ActivatedRoute,
         private boardService: BoardService,
         private taskService: TaskService,
+        private realtimeService: RealtimeBoardService,
         private confirmationService: ConfirmationService,
         private messageService: MessageService
     ) {}
@@ -37,6 +41,74 @@ export class BoardComponent implements OnInit {
     ngOnInit(): void {
         this.projectId = this.route.snapshot.paramMap.get('projectId')!;
         this.loadBoard();
+        this.connectRealtime();
+    }
+
+    // Cierre correcto de la conexion y las suscripciones al destruir el componente
+    // (seccion 6.7, ultimo punto) -- ver docs/decisions/arquitectura-decisiones.md §15.4.
+    ngOnDestroy(): void {
+        this.realtimeSubscriptions.forEach((subscription) => subscription.unsubscribe());
+        void this.realtimeService.leaveBoard(this.projectId).finally(() => this.realtimeService.disconnect());
+    }
+
+    private connectRealtime(): void {
+        this.realtimeService
+            .connect()
+            .then(() => this.realtimeService.joinBoard(this.projectId))
+            .catch(() =>
+                this.messageService.add({
+                    severity: 'warn',
+                    summary: 'Tiempo real no disponible',
+                    detail: 'El tablero funciona igual, pero no veras los cambios de otras sesiones en vivo.'
+                })
+            );
+
+        this.realtimeSubscriptions.push(
+            this.realtimeService.taskCreated$.subscribe((task) => this.applyRemoteTaskCreated(task)),
+            this.realtimeService.taskUpdated$.subscribe((task) => this.replaceTaskInPlace(task)),
+            this.realtimeService.taskDeleted$.subscribe((payload) => this.applyRemoteTaskDeleted(payload)),
+            this.realtimeService.taskMoved$.subscribe((payload) => this.applyRemoteTaskMoved(payload))
+        );
+    }
+
+    // Los tres siguientes replican, para cambios que llegan de otra sesion, la misma
+    // mutacion de arrays que ya aplica esta sesion de forma optimista (onDrop/deleteTask) --
+    // ver ADR §15.5. El emisor original no recibe su propio evento (ADR §15.3), asi que no
+    // hace falta distinguir "propio" de "ajeno" aqui.
+    private applyRemoteTaskCreated(task: BoardTask): void {
+        const column = this.board?.columns.find((c) => c.id === task.columnId);
+        if (!column || column.tasks.some((t) => t.id === task.id)) {
+            return;
+        }
+        column.tasks.push(task);
+        column.tasks.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+    }
+
+    private applyRemoteTaskDeleted(payload: TaskDeletedPayload): void {
+        const column = this.board?.columns.find((c) => c.id === payload.columnId);
+        if (column) {
+            column.tasks = column.tasks.filter((t) => t.id !== payload.taskId);
+        }
+    }
+
+    private applyRemoteTaskMoved(payload: TaskMovedPayload): void {
+        if (!this.board) {
+            return;
+        }
+
+        for (const column of this.board.columns) {
+            const index = column.tasks.findIndex((t) => t.id === payload.task.id);
+            if (index >= 0) {
+                column.tasks.splice(index, 1);
+                break;
+            }
+        }
+
+        const targetColumn = this.board.columns.find((c) => c.id === payload.task.columnId);
+        if (targetColumn) {
+            const insertAt = Math.min(payload.targetIndex, targetColumn.tasks.length);
+            targetColumn.tasks.splice(insertAt, 0, payload.task);
+        }
     }
 
     loadBoard(): void {
