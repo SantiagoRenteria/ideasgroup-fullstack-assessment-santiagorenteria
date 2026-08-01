@@ -1,0 +1,52 @@
+<p-dialog
+    [header]="isEditMode ? 'Editar proyecto' : 'Nuevo proyecto'"
+    [(visible)]="visible"
+    [modal]="true"
+    [style]="{ width: '32rem' }"
+    (onHide)="close()"
+>
+    <form [formGroup]="form" (ngSubmit)="save()">
+        <div class="field">
+            <label for="name">Nombre</label>
+            <input id="name" type="text" pInputText class="w-full" formControlName="name" />
+            <small class="p-error" *ngIf="submitted && form.get('name')?.invalid">El nombre es obligatorio.</small>
+        </div>
+
+        <div class="field">
+            <label for="description">Descripción</label>
+            <textarea id="description" pInputTextarea class="w-full" rows="3" formControlName="description"></textarea>
+            <small class="p-error" *ngIf="submitted && form.get('description')?.invalid">La descripción es obligatoria.</small>
+        </div>
+
+        <div class="formgrid grid">
+            <div class="field col">
+                <label for="startDate">Fecha de inicio</label>
+                <p-calendar inputId="startDate" formControlName="startDate" dateFormat="yy-mm-dd" class="w-full" [showIcon]="true"></p-calendar>
+            </div>
+            <div class="field col">
+                <label for="endDate">Fecha de fin prevista</label>
+                <p-calendar inputId="endDate" formControlName="endDate" dateFormat="yy-mm-dd" class="w-full" [showIcon]="true"></p-calendar>
+            </div>
+        </div>
+        <small class="p-error" *ngIf="submitted && form.errors?.['endDateBeforeStartDate']">
+            La fecha de fin prevista no puede ser anterior a la fecha de inicio.
+        </small>
+
+        <div class="field">
+            <label for="status">Estado</label>
+            <p-dropdown
+                inputId="status"
+                class="w-full"
+                [options]="statusOptions"
+                optionLabel="label"
+                optionValue="value"
+                formControlName="status"
+            ></p-dropdown>
+        </div>
+    </form>
+
+    <ng-template pTemplate="footer">
+        <button pButton type="button" label="Cancelar" class="p-button-text" (click)="close()"></button>
+        <button pButton type="button" label="Guardar" [loading]="saving" (click)="save()"></button>
+    </ng-template>
+</p-dialog>
