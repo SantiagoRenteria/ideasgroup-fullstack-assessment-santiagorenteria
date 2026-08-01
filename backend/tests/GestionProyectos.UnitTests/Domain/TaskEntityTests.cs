@@ -60,6 +60,63 @@ public class TaskEntityTests
     }
 
     [Fact]
+    public void Update_ConDatosValidos_ActualizaCamposDeNegocio()
+    {
+        var task = CreateValid();
+        var assigneeId = Guid.NewGuid();
+
+        task.Update("Nuevo titulo", "Nueva descripcion", TaskPriority.Urgent, assigneeId);
+
+        Assert.Equal("Nuevo titulo", task.Title);
+        Assert.Equal("Nueva descripcion", task.Description);
+        Assert.Equal(TaskPriority.Urgent, task.Priority);
+        Assert.Equal(assigneeId, task.AssigneeId);
+    }
+
+    [Fact]
+    public void Update_ConTituloInvalido_LanzaExcepcionYNoModificaLaTarea()
+    {
+        var task = CreateValid();
+
+        Assert.Throws<ArgumentException>(() => task.Update("", "Nueva descripcion", TaskPriority.Urgent, null));
+
+        Assert.Equal("Titulo", task.Title);
+    }
+
+    [Fact]
+    public void Move_ConDatosValidos_ActualizaColumnaYOrden()
+    {
+        var task = CreateValid();
+        var newColumnId = Guid.NewGuid();
+
+        task.Move(newColumnId, "t");
+
+        Assert.Equal(newColumnId, task.ColumnId);
+        Assert.Equal("t", task.Order);
+    }
+
+    [Fact]
+    public void Move_ConColumnIdVacio_LanzaExcepcionYNoModificaLaTarea()
+    {
+        var task = CreateValid();
+        var originalColumnId = task.ColumnId;
+
+        Assert.Throws<ArgumentException>(() => task.Move(Guid.Empty, "t"));
+
+        Assert.Equal(originalColumnId, task.ColumnId);
+    }
+
+    [Fact]
+    public void Move_ConOrdenVacio_LanzaExcepcionYNoModificaLaTarea()
+    {
+        var task = CreateValid();
+
+        Assert.Throws<ArgumentException>(() => task.Move(Guid.NewGuid(), ""));
+
+        Assert.Equal("m", task.Order);
+    }
+
+    [Fact]
     public void Delete_MarcaIsDeletedYDeletedAt()
     {
         var task = CreateValid();
