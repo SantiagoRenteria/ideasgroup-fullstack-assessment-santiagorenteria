@@ -33,6 +33,10 @@
 </div>
 
 <div class="board-filters flex align-items-center gap-2 mb-4 flex-wrap" *ngIf="board">
+    <span class="p-input-icon-left">
+        <i class="pi pi-search"></i>
+        <input type="text" pInputText placeholder="Buscar por título o descripción" [(ngModel)]="searchText" />
+    </span>
     <p-dropdown
         [options]="users"
         optionLabel="name"

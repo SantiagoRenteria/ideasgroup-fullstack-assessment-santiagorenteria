@@ -30,6 +30,7 @@ export class BoardComponent implements OnInit, OnDestroy {
     users: AppUser[] = [];
     filterAssigneeId: string | null = null;
     filterPriority: TaskPriority | null = null;
+    searchText = '';
     connectedUsers: string[] = [];
 
     readonly priorityLabels = TASK_PRIORITY_LABELS;
@@ -150,20 +151,24 @@ export class BoardComponent implements OnInit, OnDestroy {
     // el estado real del tablero queda intacto para que el codigo de tiempo real (que si
     // mutasos arrays) siga funcionando sin cambios.
     get isFiltering(): boolean {
-        return this.filterAssigneeId !== null || this.filterPriority !== null;
+        return this.filterAssigneeId !== null || this.filterPriority !== null || this.searchText.trim().length > 0;
     }
 
     getVisibleTasks(column: BoardColumn): BoardTask[] {
+        const search = this.searchText.trim().toLowerCase();
+
         return column.tasks.filter(
             (task) =>
                 (this.filterAssigneeId === null || task.assigneeId === this.filterAssigneeId) &&
-                (this.filterPriority === null || task.priority === this.filterPriority)
+                (this.filterPriority === null || task.priority === this.filterPriority) &&
+                (search === '' || task.title.toLowerCase().includes(search) || task.description.toLowerCase().includes(search))
         );
     }
 
     clearFilters(): void {
         this.filterAssigneeId = null;
         this.filterPriority = null;
+        this.searchText = '';
     }
 
     // Descarga funcional desde la interfaz (seccion 6.8, issue #19): dispara el guardado
