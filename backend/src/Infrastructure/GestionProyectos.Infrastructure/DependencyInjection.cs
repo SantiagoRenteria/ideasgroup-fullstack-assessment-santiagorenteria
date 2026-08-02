@@ -5,6 +5,7 @@ using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Infrastructure.Persistence;
 using GestionProyectos.Infrastructure.Realtime;
 using GestionProyectos.Infrastructure.Repositories;
+using GestionProyectos.Infrastructure.Reports;
 using GestionProyectos.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<IProjectRepository, ProjectRepository>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
         services.AddScoped<ITaskRepository, TaskRepository>();
+        services.AddScoped<IProjectReportRepository, ProjectReportRepository>();
         services.AddScoped<IUnitOfWork, Persistence.UnitOfWork>();
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
