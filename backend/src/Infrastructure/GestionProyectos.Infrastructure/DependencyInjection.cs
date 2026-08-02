@@ -7,11 +7,13 @@ using GestionProyectos.Infrastructure.Realtime;
 using GestionProyectos.Infrastructure.Repositories;
 using GestionProyectos.Infrastructure.Reports;
 using GestionProyectos.Infrastructure.Security;
+using GestionProyectos.Application.Reports;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using QuestPDF.Infrastructure;
 
 namespace GestionProyectos.Infrastructure;
 
@@ -19,6 +21,11 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        // Licencia Community obligatoria antes de generar cualquier PDF (enunciado seccion 4:
+        // QuestPDF es la libreria obligatoria) -- sin esto, QuestPdfReportExporter.Export
+        // lanza excepcion en runtime, no solo un warning.
+        QuestPDF.Settings.License = LicenseType.Community;
+
         services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 
@@ -31,6 +38,9 @@ public static class DependencyInjection
         services.AddScoped<ITaskRepository, TaskRepository>();
         services.AddScoped<IProjectReportRepository, ProjectReportRepository>();
         services.AddScoped<IUnitOfWork, Persistence.UnitOfWork>();
+        // Singleton: sin estado ni dependencias, son transformaciones puras DTO -> bytes
+        // (mismo criterio que IPasswordHasher/IJwtTokenGenerator, mas abajo).
+        services.AddSingleton<IReportExporter, QuestPdfReportExporter>();
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IBoardNotifier, SignalRBoardNotifier>();
