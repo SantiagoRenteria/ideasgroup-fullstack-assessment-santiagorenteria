@@ -33,7 +33,7 @@ public class ExportProjectReportQueryHandler : IRequestHandler<ExportProjectRepo
         if (report is null)
         {
             _logger.LogWarning("Intento de exportar el reporte del proyecto inexistente {ProjectId}", request.ProjectId);
-            return Result<ExportedReportDto>.Failure(ProjectNotFound);
+            return Result<ExportedReportDto>.Failure(ProjectNotFound, ErrorType.NotFound);
         }
 
         var exporter = _exporters.FirstOrDefault(e => e.Format.Equals(request.Format, StringComparison.OrdinalIgnoreCase));
@@ -41,7 +41,7 @@ public class ExportProjectReportQueryHandler : IRequestHandler<ExportProjectRepo
         if (exporter is null)
         {
             _logger.LogWarning("Intento de exportar el reporte del proyecto {ProjectId} en formato no soportado {Format}", request.ProjectId, request.Format);
-            return Result<ExportedReportDto>.Failure(UnsupportedFormat);
+            return Result<ExportedReportDto>.Failure(UnsupportedFormat, ErrorType.Validation);
         }
 
         var generatedReport = report with { GeneratedAt = DateTime.UtcNow };

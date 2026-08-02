@@ -38,7 +38,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<LoginRes
             _logger.LogWarning("Intento de login fallido para {Email}", email);
 
             // Mensaje generico deliberado: no revelar si el correo existe (evita enumeracion de usuarios).
-            return Result<LoginResponseDto>.Failure(InvalidCredentials);
+            return Result<LoginResponseDto>.Failure(InvalidCredentials, ErrorType.Unauthorized);
         }
 
         var token = _jwtTokenGenerator.Generate(user);

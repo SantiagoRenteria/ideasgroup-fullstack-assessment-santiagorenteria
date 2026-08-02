@@ -37,7 +37,7 @@ public class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Resul
         if (column is null)
         {
             _logger.LogWarning("Intento de crear una tarea en la columna inexistente {ColumnId}", request.ColumnId);
-            return Result<TaskResponseDto>.Failure(ColumnNotFound);
+            return Result<TaskResponseDto>.Failure(ColumnNotFound, ErrorType.NotFound);
         }
 
         // Alta desde el tablero (seccion 6.5): siempre se agrega al final de la columna,

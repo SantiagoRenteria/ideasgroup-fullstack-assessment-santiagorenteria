@@ -31,7 +31,7 @@ public class UpdateColumnCommandHandler : IRequestHandler<UpdateColumnCommand, R
         if (column is null)
         {
             _logger.LogWarning("Intento de actualizar la columna inexistente {ColumnId}", request.Id);
-            return Result<ColumnResponseDto>.Failure(ColumnNotFound);
+            return Result<ColumnResponseDto>.Failure(ColumnNotFound, ErrorType.NotFound);
         }
 
         column.Rename(request.Name);

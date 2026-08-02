@@ -35,7 +35,7 @@ public class CreateColumnCommandHandler : IRequestHandler<CreateColumnCommand, R
         if (project is null)
         {
             _logger.LogWarning("Intento de crear una columna en el proyecto inexistente {ProjectId}", request.ProjectId);
-            return Result<ColumnResponseDto>.Failure(ProjectNotFound);
+            return Result<ColumnResponseDto>.Failure(ProjectNotFound, ErrorType.NotFound);
         }
 
         var column = new Column(Guid.NewGuid(), request.ProjectId, request.Name, request.Order);

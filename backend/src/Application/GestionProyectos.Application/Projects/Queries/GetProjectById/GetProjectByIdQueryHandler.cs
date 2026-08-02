@@ -26,7 +26,7 @@ public class GetProjectByIdQueryHandler : IRequestHandler<GetProjectByIdQuery, R
         if (project is null)
         {
             _logger.LogWarning("Intento de consultar el proyecto inexistente {ProjectId}", request.Id);
-            return Result<ProjectResponseDto>.Failure(ProjectNotFound);
+            return Result<ProjectResponseDto>.Failure(ProjectNotFound, ErrorType.NotFound);
         }
 
         return Result<ProjectResponseDto>.Success(project.ToDto());

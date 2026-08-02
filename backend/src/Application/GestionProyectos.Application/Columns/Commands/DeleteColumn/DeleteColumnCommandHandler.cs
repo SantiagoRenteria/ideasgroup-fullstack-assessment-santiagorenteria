@@ -34,13 +34,13 @@ public class DeleteColumnCommandHandler : IRequestHandler<DeleteColumnCommand, R
         if (column is null)
         {
             _logger.LogWarning("Intento de eliminar la columna inexistente {ColumnId}", request.Id);
-            return Result.Failure(ColumnNotFound);
+            return Result.Failure(ColumnNotFound, ErrorType.NotFound);
         }
 
         if (await _columnRepository.HasTasksAsync(column.Id, cancellationToken))
         {
             _logger.LogWarning("Intento de eliminar la columna {ColumnId} que contiene tareas", column.Id);
-            return Result.Failure(ColumnHasTasks);
+            return Result.Failure(ColumnHasTasks, ErrorType.Conflict);
         }
 
         column.Delete();
