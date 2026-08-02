@@ -1,6 +1,7 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { environment } from 'src/environments/environment';
+import { TaskPriority } from '../models/task.model';
 import { ReportService } from './report.service';
 
 describe('ReportService', () => {
@@ -46,6 +47,24 @@ describe('ReportService', () => {
         });
 
         const req = httpMock.expectOne((r) => r.url === `${baseUrl}/proj-1/report`);
+        req.flush(new Blob(['contenido']));
+    });
+
+    it('download manda assigneeId y priority como query params cuando hay filtro activo', () => {
+        service.download('proj-1', 'pdf', { assigneeId: 'user-1', priority: TaskPriority.High }).subscribe();
+
+        const req = httpMock.expectOne((r) => r.url === `${baseUrl}/proj-1/report`);
+        expect(req.request.params.get('assigneeId')).toBe('user-1');
+        expect(req.request.params.get('priority')).toBe('High');
+        req.flush(new Blob(['contenido']));
+    });
+
+    it('download no agrega assigneeId ni priority sin filtro activo', () => {
+        service.download('proj-1', 'pdf', { assigneeId: null, priority: null }).subscribe();
+
+        const req = httpMock.expectOne((r) => r.url === `${baseUrl}/proj-1/report`);
+        expect(req.request.params.has('assigneeId')).toBeFalse();
+        expect(req.request.params.has('priority')).toBeFalse();
         req.flush(new Blob(['contenido']));
     });
 });
