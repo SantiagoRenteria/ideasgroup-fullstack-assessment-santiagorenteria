@@ -1,6 +1,7 @@
 using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Tasks.Commands.DeleteTask;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -47,6 +48,7 @@ public class DeleteTaskCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(DeleteTaskCommandHandler.TaskNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -81,6 +83,7 @@ public class DeleteTaskCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(DeleteTaskCommandHandler.ConcurrencyConflict, result.Error);
+        Assert.Equal(ErrorType.Conflict, result.ErrorType);
         await _boardNotifier.DidNotReceive().TaskDeletedAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 }

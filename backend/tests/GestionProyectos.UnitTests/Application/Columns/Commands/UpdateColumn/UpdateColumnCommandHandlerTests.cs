@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Columns.Commands.UpdateColumn;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -38,5 +39,6 @@ public class UpdateColumnCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(UpdateColumnCommandHandler.ColumnNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
     }
 }

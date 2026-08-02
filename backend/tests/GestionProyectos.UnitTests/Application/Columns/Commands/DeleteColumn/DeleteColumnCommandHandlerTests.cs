@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Columns.Commands.DeleteColumn;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -43,6 +44,7 @@ public class DeleteColumnCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(DeleteColumnCommandHandler.ColumnHasTasks, result.Error);
+        Assert.Equal(ErrorType.Conflict, result.ErrorType);
         Assert.False(column.IsDeleted);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
@@ -58,6 +60,7 @@ public class DeleteColumnCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(DeleteColumnCommandHandler.ColumnNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
         await _columnRepository.DidNotReceive().HasTasksAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 }

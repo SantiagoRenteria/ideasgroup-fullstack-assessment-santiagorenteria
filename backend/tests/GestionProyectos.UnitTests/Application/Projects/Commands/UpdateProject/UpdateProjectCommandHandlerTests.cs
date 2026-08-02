@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Projects.Commands.UpdateProject;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -48,6 +49,7 @@ public class UpdateProjectCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(UpdateProjectCommandHandler.ProjectNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -69,6 +71,7 @@ public class UpdateProjectCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(UpdateProjectCommandHandler.DuplicateName, result.Error);
+        Assert.Equal(ErrorType.Conflict, result.ErrorType);
         Assert.Equal("Nombre viejo", project.Name);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }

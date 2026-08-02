@@ -1,6 +1,7 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Reports;
 using GestionProyectos.Application.Reports.Queries.ExportProjectReport;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -30,6 +31,7 @@ public class ExportProjectReportQueryHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ExportProjectReportQueryHandler.ProjectNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
     }
 
     [Fact]
@@ -45,6 +47,7 @@ public class ExportProjectReportQueryHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ExportProjectReportQueryHandler.UnsupportedFormat, result.Error);
+        Assert.Equal(ErrorType.Validation, result.ErrorType);
     }
 
     [Fact]

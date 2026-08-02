@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Columns.Commands.CreateColumn;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -47,6 +48,7 @@ public class CreateColumnCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CreateColumnCommandHandler.ProjectNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
         await _columnRepository.DidNotReceive().AddAsync(Arg.Any<Column>(), Arg.Any<CancellationToken>());
     }
 }

@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Board.Queries.GetProjectBoard;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,6 +27,7 @@ public class GetProjectBoardQueryHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(GetProjectBoardQueryHandler.ProjectNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
     }
 
     [Fact]

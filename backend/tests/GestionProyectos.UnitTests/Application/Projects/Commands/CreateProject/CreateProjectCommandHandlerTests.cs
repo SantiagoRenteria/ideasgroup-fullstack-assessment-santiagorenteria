@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Projects.Commands.CreateProject;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -41,6 +42,7 @@ public class CreateProjectCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CreateProjectCommandHandler.DuplicateName, result.Error);
+        Assert.Equal(ErrorType.Conflict, result.ErrorType);
         await _projectRepository.DidNotReceive().AddAsync(Arg.Any<Project>(), Arg.Any<CancellationToken>());
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }

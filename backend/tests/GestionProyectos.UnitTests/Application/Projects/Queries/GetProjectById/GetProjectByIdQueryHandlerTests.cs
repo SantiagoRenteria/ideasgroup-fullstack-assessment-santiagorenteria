@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Projects.Queries.GetProjectById;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -39,5 +40,6 @@ public class GetProjectByIdQueryHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal("Proyecto no encontrado.", result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
     }
 }
