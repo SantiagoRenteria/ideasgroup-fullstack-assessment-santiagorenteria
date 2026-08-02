@@ -1,0 +1,45 @@
+erDiagram
+    users {
+        uuid Id PK
+        varchar name
+        varchar email UK
+        text password_hash
+    }
+    projects {
+        uuid Id PK
+        varchar name UK
+        varchar description
+        date start_date
+        date end_date
+        int status
+        boolean is_deleted
+        timestamptz deleted_at
+    }
+    columns {
+        uuid Id PK
+        uuid project_id FK
+        varchar name
+        int order
+        boolean is_deleted
+        timestamptz deleted_at
+    }
+    tasks {
+        uuid Id PK
+        uuid column_id FK
+        varchar title
+        varchar description
+        int priority
+        uuid assignee_id FK
+        varchar order
+        timestamptz created_at
+        boolean is_deleted
+        timestamptz deleted_at
+    }
+    revoked_tokens {
+        varchar jti PK
+        timestamptz expires_at_utc
+    }
+
+    projects ||--o{ columns : tiene
+    columns ||--o{ tasks : contiene
+    users o|--o{ tasks : "asignado a (opcional)"

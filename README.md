@@ -2,7 +2,7 @@
 
 Aplicativo web para la gestión de proyectos ágiles: proyectos, columnas configurables y tablero kanban con tiempo real, sobre .NET 8 (arquitectura hexagonal) + Angular 17 (PrimeNG/Sakai) + PostgreSQL.
 
-> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-01, al cierre de la Fase 4.
+> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-02, al cierre de los obligatorios de la Fase 6.
 
 ---
 
@@ -34,7 +34,7 @@ Plan completo de 7 días en `docs/fases-implementacion.md`. Estado actual:
 | 3 | Tablero kanban, tareas, drag&drop, cálculo de posición (LexoRank) | ✅ Completa |
 | 4 | Tiempo real (SignalR) | ✅ Completa |
 | 5 | Reportes duales (PDF/Excel) | ✅ Completa |
-| 6 | Pruebas restantes, diagrama ERD, opcionales | ⏳ Pendiente |
+| 6 | Pruebas restantes, diagrama ERD | ✅ Completa — opcionales (§7 del enunciado) pendientes de decisión de alcance |
 
 Este README se actualiza al cierre de cada fase — las secciones marcadas "Pendiente" abajo reflejan el diseño ya decidido (documentado en `docs/decisions/arquitectura-decisiones.md`), no lo implementado todavía.
 
@@ -170,7 +170,11 @@ Detalle completo, incluida la justificación de por qué la consulta arranca des
 
 ## 9. Diagrama de base de datos
 
-**Pendiente (Fase 6).** El modelo ya está estable desde el cierre de la Fase 3 (`users`, `projects`, `columns`, `tasks` con su CRUD completo); se genera como imagen PNG desde el esquema real de las migraciones incrementales en `backend/src/Infrastructure/GestionProyectos.Infrastructure/Persistence/Migrations/`.
+![Diagrama entidad-relación](docs/diagrams/erd.png)
+
+Generado por introspección directa de `information_schema` contra el Postgres real levantado con `docker compose` (no a mano ni desde memoria del código) — columnas, tipos, claves primarias/foráneas e índices únicos consultados con SQL, volcados a `docs/diagrams/erd.mmd` (Mermaid ER) y renderizados a PNG con `@mermaid-js/mermaid-cli`. `revoked_tokens` es la única tabla sin relación con el resto: blocklist de JWT (§16 del ADR), no forma parte del modelo de dominio de la sección 5 del enunciado, pero es una tabla real de las migraciones y se incluye por fidelidad al esquema.
+
+Migraciones incrementales que generan este esquema: `backend/src/Infrastructure/GestionProyectos.Infrastructure/Persistence/Migrations/`.
 
 ---
 
