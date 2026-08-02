@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Auth;
 using GestionProyectos.Application.Common.Interfaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -16,7 +17,7 @@ public class LogoutCommandHandlerTests
         var jti = Guid.NewGuid().ToString();
         var expiresAtUtc = DateTime.UtcNow.AddMinutes(30);
 
-        var handler = new LogoutCommandHandler(_tokenRevocationStore, _unitOfWork);
+        var handler = new LogoutCommandHandler(_tokenRevocationStore, _unitOfWork, NullLogger<LogoutCommandHandler>.Instance);
 
         var result = await handler.Handle(new LogoutCommand(jti, expiresAtUtc), CancellationToken.None);
 

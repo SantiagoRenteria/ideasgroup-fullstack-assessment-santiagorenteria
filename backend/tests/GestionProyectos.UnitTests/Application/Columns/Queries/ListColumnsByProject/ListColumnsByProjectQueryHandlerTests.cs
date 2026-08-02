@@ -2,6 +2,7 @@ using GestionProyectos.Application.Columns.Queries.ListColumnsByProject;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -25,7 +26,7 @@ public class ListColumnsByProjectQueryHandlerTests
         _columnRepository.ListByProjectAsync(project.Id, Arg.Any<CancellationToken>())
             .Returns(new List<Column> { second, first });
 
-        var handler = new ListColumnsByProjectQueryHandler(_projectRepository, _columnRepository);
+        var handler = new ListColumnsByProjectQueryHandler(_projectRepository, _columnRepository, NullLogger<ListColumnsByProjectQueryHandler>.Instance);
 
         var result = await handler.Handle(new ListColumnsByProjectQuery(project.Id), CancellationToken.None);
 
@@ -38,7 +39,7 @@ public class ListColumnsByProjectQueryHandlerTests
     {
         _projectRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((Project?)null);
 
-        var handler = new ListColumnsByProjectQueryHandler(_projectRepository, _columnRepository);
+        var handler = new ListColumnsByProjectQueryHandler(_projectRepository, _columnRepository, NullLogger<ListColumnsByProjectQueryHandler>.Instance);
 
         var result = await handler.Handle(new ListColumnsByProjectQuery(Guid.NewGuid()), CancellationToken.None);
 

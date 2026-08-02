@@ -2,6 +2,7 @@ using GestionProyectos.Application.Board.Queries.GetProjectBoard;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -13,7 +14,8 @@ public class GetProjectBoardQueryHandlerTests
     private readonly IColumnRepository _columnRepository = Substitute.For<IColumnRepository>();
     private readonly ITaskRepository _taskRepository = Substitute.For<ITaskRepository>();
 
-    private GetProjectBoardQueryHandler CreateHandler() => new(_projectRepository, _columnRepository, _taskRepository);
+    private GetProjectBoardQueryHandler CreateHandler() =>
+        new(_projectRepository, _columnRepository, _taskRepository, NullLogger<GetProjectBoardQueryHandler>.Instance);
 
     [Fact]
     public async Task Handle_ProyectoNoExiste_RetornaFailure()

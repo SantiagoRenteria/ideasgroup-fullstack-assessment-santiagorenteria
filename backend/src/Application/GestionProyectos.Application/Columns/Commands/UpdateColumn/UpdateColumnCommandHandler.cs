@@ -2,6 +2,7 @@ using GestionProyectos.Application.Columns;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Common;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace GestionProyectos.Application.Columns.Commands.UpdateColumn;
 
@@ -11,11 +12,16 @@ public class UpdateColumnCommandHandler : IRequestHandler<UpdateColumnCommand, R
 
     private readonly IColumnRepository _columnRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<UpdateColumnCommandHandler> _logger;
 
-    public UpdateColumnCommandHandler(IColumnRepository columnRepository, IUnitOfWork unitOfWork)
+    public UpdateColumnCommandHandler(
+        IColumnRepository columnRepository,
+        IUnitOfWork unitOfWork,
+        ILogger<UpdateColumnCommandHandler> logger)
     {
         _columnRepository = columnRepository;
         _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<Result<ColumnResponseDto>> Handle(UpdateColumnCommand request, CancellationToken cancellationToken)
@@ -23,7 +29,10 @@ public class UpdateColumnCommandHandler : IRequestHandler<UpdateColumnCommand, R
         var column = await _columnRepository.GetByIdAsync(request.Id, cancellationToken);
 
         if (column is null)
+        {
+            _logger.LogWarning("Intento de actualizar la columna inexistente {ColumnId}", request.Id);
             return Result<ColumnResponseDto>.Failure(ColumnNotFound);
+        }
 
         column.Rename(request.Name);
         column.MoveTo(request.Order);

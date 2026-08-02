@@ -2,6 +2,7 @@ using GestionProyectos.Application.Columns.Commands.CreateColumn;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -23,7 +24,7 @@ public class CreateColumnCommandHandlerTests
         var project = CreateProject();
         _projectRepository.GetByIdAsync(project.Id, Arg.Any<CancellationToken>()).Returns(project);
 
-        var handler = new CreateColumnCommandHandler(_projectRepository, _columnRepository, _unitOfWork);
+        var handler = new CreateColumnCommandHandler(_projectRepository, _columnRepository, _unitOfWork, NullLogger<CreateColumnCommandHandler>.Instance);
         var command = new CreateColumnCommand(project.Id, "Por hacer", 0);
 
         var result = await handler.Handle(command, CancellationToken.None);
@@ -39,7 +40,7 @@ public class CreateColumnCommandHandlerTests
     {
         _projectRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((Project?)null);
 
-        var handler = new CreateColumnCommandHandler(_projectRepository, _columnRepository, _unitOfWork);
+        var handler = new CreateColumnCommandHandler(_projectRepository, _columnRepository, _unitOfWork, NullLogger<CreateColumnCommandHandler>.Instance);
         var command = new CreateColumnCommand(Guid.NewGuid(), "Por hacer", 0);
 
         var result = await handler.Handle(command, CancellationToken.None);

@@ -1,6 +1,7 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Common;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace GestionProyectos.Application.Reports.Queries.ExportProjectReport;
 
@@ -13,11 +14,16 @@ public class ExportProjectReportQueryHandler : IRequestHandler<ExportProjectRepo
 
     private readonly IProjectReportRepository _reportRepository;
     private readonly IEnumerable<IReportExporter> _exporters;
+    private readonly ILogger<ExportProjectReportQueryHandler> _logger;
 
-    public ExportProjectReportQueryHandler(IProjectReportRepository reportRepository, IEnumerable<IReportExporter> exporters)
+    public ExportProjectReportQueryHandler(
+        IProjectReportRepository reportRepository,
+        IEnumerable<IReportExporter> exporters,
+        ILogger<ExportProjectReportQueryHandler> logger)
     {
         _reportRepository = reportRepository;
         _exporters = exporters;
+        _logger = logger;
     }
 
     public async Task<Result<ExportedReportDto>> Handle(ExportProjectReportQuery request, CancellationToken cancellationToken)
@@ -25,12 +31,18 @@ public class ExportProjectReportQueryHandler : IRequestHandler<ExportProjectRepo
         var report = await _reportRepository.GetReportAsync(request.ProjectId, request.AssigneeId, request.Priority, cancellationToken);
 
         if (report is null)
+        {
+            _logger.LogWarning("Intento de exportar el reporte del proyecto inexistente {ProjectId}", request.ProjectId);
             return Result<ExportedReportDto>.Failure(ProjectNotFound);
+        }
 
         var exporter = _exporters.FirstOrDefault(e => e.Format.Equals(request.Format, StringComparison.OrdinalIgnoreCase));
 
         if (exporter is null)
+        {
+            _logger.LogWarning("Intento de exportar el reporte del proyecto {ProjectId} en formato no soportado {Format}", request.ProjectId, request.Format);
             return Result<ExportedReportDto>.Failure(UnsupportedFormat);
+        }
 
         var generatedReport = report with { GeneratedAt = DateTime.UtcNow };
         var content = exporter.Export(generatedReport);
