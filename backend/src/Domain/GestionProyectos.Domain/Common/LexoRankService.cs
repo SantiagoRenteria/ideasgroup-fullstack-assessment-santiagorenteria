@@ -75,6 +75,10 @@ public static class LexoRankService
     }
 
     private static int IndexOf(char c) => Alphabet.IndexOf(c);
+
+    // Expuesto para LexoRankKey (Domain/ValueObjects) -- valida que una clave persistida
+    // pertenezca al mismo alfabeto que este servicio genera, sin duplicar la constante.
+    internal static bool IsValidCharacter(char c) => Alphabet.IndexOf(c) >= 0;
 }
 
 public sealed class LexoRankRebalanceRequiredException : Exception
