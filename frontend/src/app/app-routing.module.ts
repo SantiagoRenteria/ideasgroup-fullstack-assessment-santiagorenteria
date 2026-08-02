@@ -1,6 +1,6 @@
 import { RouterModule } from '@angular/router';
 import { NgModule } from '@angular/core';
-import { NotfoundComponent } from './demo/components/notfound/notfound.component';
+import { NotFoundComponent } from './features/not-found/not-found.component';
 import { AppLayoutComponent } from "./layout/app.layout.component";
 import { authGuard } from './core/guards/auth.guard';
 
@@ -10,19 +10,13 @@ import { authGuard } from './core/guards/auth.guard';
             {
                 path: '', component: AppLayoutComponent, canActivate: [authGuard],
                 children: [
-                    { path: '', loadChildren: () => import('./demo/components/dashboard/dashboard.module').then(m => m.DashboardModule) },
+                    { path: '', redirectTo: 'projects', pathMatch: 'full' },
                     { path: 'projects', loadChildren: () => import('./features/projects/projects.module').then(m => m.ProjectsModule) },
-                    { path: 'board', loadChildren: () => import('./features/board/board.module').then(m => m.BoardModule) },
-                    { path: 'uikit', loadChildren: () => import('./demo/components/uikit/uikit.module').then(m => m.UIkitModule) },
-                    { path: 'utilities', loadChildren: () => import('./demo/components/utilities/utilities.module').then(m => m.UtilitiesModule) },
-                    { path: 'documentation', loadChildren: () => import('./demo/components/documentation/documentation.module').then(m => m.DocumentationModule) },
-                    { path: 'blocks', loadChildren: () => import('./demo/components/primeblocks/primeblocks.module').then(m => m.PrimeBlocksModule) },
-                    { path: 'pages', loadChildren: () => import('./demo/components/pages/pages.module').then(m => m.PagesModule) }
+                    { path: 'board', loadChildren: () => import('./features/board/board.module').then(m => m.BoardModule) }
                 ]
             },
-            { path: 'auth', loadChildren: () => import('./demo/components/auth/auth.module').then(m => m.AuthModule) },
-            { path: 'landing', loadChildren: () => import('./demo/components/landing/landing.module').then(m => m.LandingModule) },
-            { path: 'notfound', component: NotfoundComponent },
+            { path: 'auth/login', loadChildren: () => import('./features/auth/login/login.module').then(m => m.LoginModule) },
+            { path: 'notfound', component: NotFoundComponent },
             { path: '**', redirectTo: '/notfound' },
         ], { scrollPositionRestoration: 'enabled', anchorScrolling: 'enabled', onSameUrlNavigation: 'reload' })
     ],
