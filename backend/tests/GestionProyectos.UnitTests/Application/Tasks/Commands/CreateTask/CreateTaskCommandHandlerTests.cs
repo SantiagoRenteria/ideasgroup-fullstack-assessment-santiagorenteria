@@ -1,4 +1,5 @@
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.CreateTask;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
@@ -12,8 +13,12 @@ public class CreateTaskCommandHandlerTests
     private readonly IColumnRepository _columnRepository = Substitute.For<IColumnRepository>();
     private readonly ITaskRepository _taskRepository = Substitute.For<ITaskRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+    private readonly IBoardNotifier _boardNotifier = Substitute.For<IBoardNotifier>();
 
     private static Column CreateColumn() => new(Guid.NewGuid(), Guid.NewGuid(), "Por hacer", 0);
+
+    private CreateTaskCommandHandler CreateHandler() =>
+        new(_columnRepository, _taskRepository, _unitOfWork, _boardNotifier);
 
     [Fact]
     public async Task Handle_ColumnaVacia_CreaTareaConClaveInicial()
@@ -22,7 +27,7 @@ public class CreateTaskCommandHandlerTests
         _columnRepository.GetByIdAsync(column.Id, Arg.Any<CancellationToken>()).Returns(column);
         _taskRepository.ListByColumnAsync(column.Id, Arg.Any<CancellationToken>()).Returns(new List<TaskEntity>());
 
-        var handler = new CreateTaskCommandHandler(_columnRepository, _taskRepository, _unitOfWork);
+        var handler = CreateHandler();
         var command = new CreateTaskCommand(column.Id, "Titulo", "Descripcion", TaskPriority.Medium, null);
 
         var result = await handler.Handle(command, CancellationToken.None);
@@ -42,7 +47,7 @@ public class CreateTaskCommandHandlerTests
         _columnRepository.GetByIdAsync(column.Id, Arg.Any<CancellationToken>()).Returns(column);
         _taskRepository.ListByColumnAsync(column.Id, Arg.Any<CancellationToken>()).Returns(new List<TaskEntity> { existing });
 
-        var handler = new CreateTaskCommandHandler(_columnRepository, _taskRepository, _unitOfWork);
+        var handler = CreateHandler();
         var command = new CreateTaskCommand(column.Id, "Nueva", "Descripcion", TaskPriority.Medium, null);
 
         var result = await handler.Handle(command, CancellationToken.None);
@@ -56,7 +61,7 @@ public class CreateTaskCommandHandlerTests
     {
         _columnRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((Column?)null);
 
-        var handler = new CreateTaskCommandHandler(_columnRepository, _taskRepository, _unitOfWork);
+        var handler = CreateHandler();
         var command = new CreateTaskCommand(Guid.NewGuid(), "Titulo", "Descripcion", TaskPriority.Medium, null);
 
         var result = await handler.Handle(command, CancellationToken.None);
@@ -64,5 +69,26 @@ public class CreateTaskCommandHandlerTests
         Assert.False(result.IsSuccess);
         Assert.Equal(CreateTaskCommandHandler.ColumnNotFound, result.Error);
         await _taskRepository.DidNotReceive().AddAsync(Arg.Any<TaskEntity>(), Arg.Any<CancellationToken>());
+    }
+
+    // Seccion 6.7: alta de tarea debe propagarse por tiempo real al resto de sesiones del
+    // mismo tablero (proyecto), excluyendo la conexion del propio emisor (ADR §15.3).
+    [Fact]
+    public async Task Handle_TareaCreada_NotificaAlTableroExcluyendoAlEmisor()
+    {
+        var column = CreateColumn();
+        _columnRepository.GetByIdAsync(column.Id, Arg.Any<CancellationToken>()).Returns(column);
+        _taskRepository.ListByColumnAsync(column.Id, Arg.Any<CancellationToken>()).Returns(new List<TaskEntity>());
+
+        var handler = CreateHandler();
+        var command = new CreateTaskCommand(column.Id, "Titulo", "Descripcion", TaskPriority.Medium, null, "conn-1");
+
+        await handler.Handle(command, CancellationToken.None);
+
+        await _boardNotifier.Received(1).TaskCreatedAsync(
+            column.ProjectId,
+            Arg.Is<TaskResponseDto>(dto => dto.Title == "Titulo"),
+            "conn-1",
+            Arg.Any<CancellationToken>());
     }
 }

@@ -2,16 +2,20 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { TestBed } from '@angular/core/testing';
 import { environment } from 'src/environments/environment';
 import { TaskPriority } from '../models/task.model';
+import { RealtimeBoardService } from './realtime-board.service';
 import { TaskService } from './task.service';
 
 describe('TaskService', () => {
     let service: TaskService;
     let httpMock: HttpTestingController;
+    let realtimeService: { connectionId: string | null };
 
     beforeEach(() => {
+        realtimeService = { connectionId: null };
+
         TestBed.configureTestingModule({
             imports: [HttpClientTestingModule],
-            providers: [TaskService]
+            providers: [TaskService, { provide: RealtimeBoardService, useValue: realtimeService }]
         });
         service = TestBed.inject(TaskService);
         httpMock = TestBed.inject(HttpTestingController);
@@ -52,5 +56,25 @@ describe('TaskService', () => {
         const req = httpMock.expectOne(`${environment.apiUrl}/tasks/task-1`);
         expect(req.request.method).toBe('DELETE');
         req.flush(null);
+    });
+
+    // ADR §15.3: el backend excluye a este mismo cliente al notificar por tiempo real
+    // usando este header -- solo tiene sentido enviarlo si el canal esta conectado.
+    it('sin conexion de tiempo real activa, no envia el header X-Realtime-Connection-Id', () => {
+        service.create({ columnId: 'col-1', title: 'Titulo', description: 'Desc', priority: TaskPriority.Medium, assigneeId: null }).subscribe();
+
+        const req = httpMock.expectOne(`${environment.apiUrl}/tasks`);
+        expect(req.request.headers.has('X-Realtime-Connection-Id')).toBeFalse();
+        req.flush({});
+    });
+
+    it('con una conexion de tiempo real activa, envia su connectionId en X-Realtime-Connection-Id', () => {
+        realtimeService.connectionId = 'conn-1';
+
+        service.move('task-1', { targetColumnId: 'col-2', targetIndex: 0 }).subscribe();
+
+        const req = httpMock.expectOne(`${environment.apiUrl}/tasks/task-1/move`);
+        expect(req.request.headers.get('X-Realtime-Connection-Id')).toBe('conn-1');
+        req.flush({});
     });
 });

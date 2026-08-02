@@ -3,6 +3,7 @@ using System;
 using GestionProyectos.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace GestionProyectos.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260801181517_AddXminConcurrencyTokenToTasks")]
+    partial class AddXminConcurrencyTokenToTasks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -320,22 +323,6 @@ namespace GestionProyectos.Infrastructure.Persistence.Migrations
                             Name = "Evaluador",
                             PasswordHash = "$2a$11$YJ0PQ4j9uGPeu.c0KarD3.nWP8.o7KjhuJ8P/W6JxT4vXAKvumGhu"
                         });
-                });
-
-            modelBuilder.Entity("GestionProyectos.Infrastructure.Persistence.Entities.RevokedToken", b =>
-                {
-                    b.Property<string>("Jti")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("jti");
-
-                    b.Property<DateTime>("ExpiresAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("expires_at_utc");
-
-                    b.HasKey("Jti");
-
-                    b.ToTable("revoked_tokens", (string)null);
                 });
 
             modelBuilder.Entity("GestionProyectos.Domain.Entities.Column", b =>

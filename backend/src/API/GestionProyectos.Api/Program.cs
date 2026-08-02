@@ -4,6 +4,7 @@ using GestionProyectos.Api.Endpoints;
 using GestionProyectos.Application;
 using GestionProyectos.Infrastructure;
 using GestionProyectos.Infrastructure.Persistence;
+using GestionProyectos.Infrastructure.Realtime;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -116,6 +117,7 @@ try
     app.MapTasksEndpoints();
     app.MapBoardEndpoints();
     app.MapUsersEndpoints();
+    app.MapHub<BoardHub>("/hubs/board").RequireAuthorization();
 
     app.Run();
 }

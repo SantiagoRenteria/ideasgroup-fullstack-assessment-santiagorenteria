@@ -3,4 +3,5 @@ using GestionProyectos.Domain.Common;
 
 namespace GestionProyectos.Application.Tasks.Commands.DeleteTask;
 
-public record DeleteTaskCommand(Guid Id) : ICommand<Result>;
+// ConnectionId: ver CreateTaskCommand / ADR §15.3.
+public record DeleteTaskCommand(Guid Id, string? ConnectionId = null) : ICommand<Result>;

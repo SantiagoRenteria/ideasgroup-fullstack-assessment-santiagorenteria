@@ -1,4 +1,6 @@
+using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.MoveTask;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
@@ -12,9 +14,13 @@ public class MoveTaskCommandHandlerTests
     private readonly ITaskRepository _taskRepository = Substitute.For<ITaskRepository>();
     private readonly IColumnRepository _columnRepository = Substitute.For<IColumnRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+    private readonly IBoardNotifier _boardNotifier = Substitute.For<IBoardNotifier>();
 
     private static TaskEntity CreateTask(Guid columnId, string order) => new(
         Guid.NewGuid(), columnId, "Titulo", "Descripcion", TaskPriority.Low, null, order, DateTime.UtcNow);
+
+    private MoveTaskCommandHandler CreateHandler() =>
+        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier);
 
     [Fact]
     public async Task Handle_ReordenaDentroDeLaMismaColumna_QuedaEntreLosDosVecinos()
@@ -32,7 +38,7 @@ public class MoveTaskCommandHandlerTests
         _taskRepository.ListByColumnAsync(columnId, Arg.Any<CancellationToken>())
             .Returns(new List<TaskEntity> { before, task, after });
 
-        var handler = new MoveTaskCommandHandler(_taskRepository, _columnRepository, _unitOfWork);
+        var handler = CreateHandler();
 
         var result = await handler.Handle(new MoveTaskCommand(task.Id, columnId, 1), CancellationToken.None);
 
@@ -52,7 +58,7 @@ public class MoveTaskCommandHandlerTests
         _columnRepository.GetByIdAsync(targetColumn.Id, Arg.Any<CancellationToken>()).Returns(targetColumn);
         _taskRepository.ListByColumnAsync(targetColumn.Id, Arg.Any<CancellationToken>()).Returns(new List<TaskEntity>());
 
-        var handler = new MoveTaskCommandHandler(_taskRepository, _columnRepository, _unitOfWork);
+        var handler = CreateHandler();
 
         var result = await handler.Handle(new MoveTaskCommand(task.Id, targetColumn.Id, 0), CancellationToken.None);
 
@@ -78,7 +84,7 @@ public class MoveTaskCommandHandlerTests
         _taskRepository.ListByColumnAsync(columnId, Arg.Any<CancellationToken>())
             .Returns(new List<TaskEntity> { before, task, after });
 
-        var handler = new MoveTaskCommandHandler(_taskRepository, _columnRepository, _unitOfWork);
+        var handler = CreateHandler();
 
         var result = await handler.Handle(new MoveTaskCommand(task.Id, columnId, 1), CancellationToken.None);
 
@@ -94,7 +100,7 @@ public class MoveTaskCommandHandlerTests
     {
         _taskRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((TaskEntity?)null);
 
-        var handler = new MoveTaskCommandHandler(_taskRepository, _columnRepository, _unitOfWork);
+        var handler = CreateHandler();
 
         var result = await handler.Handle(new MoveTaskCommand(Guid.NewGuid(), Guid.NewGuid(), 0), CancellationToken.None);
 
@@ -109,7 +115,7 @@ public class MoveTaskCommandHandlerTests
         _taskRepository.GetByIdAsync(task.Id, Arg.Any<CancellationToken>()).Returns(task);
         _columnRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((Column?)null);
 
-        var handler = new MoveTaskCommandHandler(_taskRepository, _columnRepository, _unitOfWork);
+        var handler = CreateHandler();
 
         var result = await handler.Handle(new MoveTaskCommand(task.Id, Guid.NewGuid(), 0), CancellationToken.None);
 
@@ -128,7 +134,7 @@ public class MoveTaskCommandHandlerTests
         _columnRepository.GetByIdAsync(columnId, Arg.Any<CancellationToken>()).Returns(column);
         _taskRepository.ListByColumnAsync(columnId, Arg.Any<CancellationToken>()).Returns(new List<TaskEntity> { task });
 
-        var handler = new MoveTaskCommandHandler(_taskRepository, _columnRepository, _unitOfWork);
+        var handler = CreateHandler();
 
         // Solo queda `task` tras excluirse a si misma (0 elementos), asi que el maximo
         // indice valido es 0 -- pedir 5 debe fallar.
@@ -137,5 +143,46 @@ public class MoveTaskCommandHandlerTests
         Assert.False(result.IsSuccess);
         Assert.Equal(MoveTaskCommandHandler.TargetIndexOutOfRange, result.Error);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    // Seccion 6.7: el traslado/reordenamiento debe propagarse al tablero excluyendo al
+    // emisor (ADR §15.3), con el TargetIndex original para que las demas sesiones
+    // reproduzcan el mismo moveItemInArray/transferArrayItem (ADR §15.5).
+    [Fact]
+    public async Task Handle_TareaMovida_NotificaAlTableroConTargetIndexExcluyendoAlEmisor()
+    {
+        var targetColumn = new Column(Guid.NewGuid(), Guid.NewGuid(), "Hecho", 0);
+        var task = CreateTask(Guid.NewGuid(), "m");
+        _taskRepository.GetByIdAsync(task.Id, Arg.Any<CancellationToken>()).Returns(task);
+        _columnRepository.GetByIdAsync(targetColumn.Id, Arg.Any<CancellationToken>()).Returns(targetColumn);
+        _taskRepository.ListByColumnAsync(targetColumn.Id, Arg.Any<CancellationToken>()).Returns(new List<TaskEntity>());
+
+        var handler = CreateHandler();
+
+        await handler.Handle(new MoveTaskCommand(task.Id, targetColumn.Id, 0, "conn-1"), CancellationToken.None);
+
+        await _boardNotifier.Received(1).TaskMovedAsync(targetColumn.ProjectId, Arg.Any<TaskResponseDto>(), 0, "conn-1", Arg.Any<CancellationToken>());
+    }
+
+    // ADR §15.2: dos sesiones moviendo la misma tarea al mismo tiempo -- la segunda debe
+    // recibir un error de negocio (409), disparando la reversion visible de 6.6.
+    [Fact]
+    public async Task Handle_ConflictoDeConcurrencia_RetornaFailureYNoNotifica()
+    {
+        var targetColumn = new Column(Guid.NewGuid(), Guid.NewGuid(), "Hecho", 0);
+        var task = CreateTask(Guid.NewGuid(), "m");
+        _taskRepository.GetByIdAsync(task.Id, Arg.Any<CancellationToken>()).Returns(task);
+        _columnRepository.GetByIdAsync(targetColumn.Id, Arg.Any<CancellationToken>()).Returns(targetColumn);
+        _taskRepository.ListByColumnAsync(targetColumn.Id, Arg.Any<CancellationToken>()).Returns(new List<TaskEntity>());
+        _unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new ConcurrencyConflictException("conflicto")));
+
+        var handler = CreateHandler();
+
+        var result = await handler.Handle(new MoveTaskCommand(task.Id, targetColumn.Id, 0), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(MoveTaskCommandHandler.ConcurrencyConflict, result.Error);
+        await _boardNotifier.DidNotReceive().TaskMovedAsync(Arg.Any<Guid>(), Arg.Any<TaskResponseDto>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 }

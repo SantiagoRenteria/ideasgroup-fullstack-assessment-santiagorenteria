@@ -156,7 +156,7 @@ El endpoint resuelve por inyección de `IEnumerable<IReportExporter>`, nunca por
 | Valores de `Prioridad` de Tarea | Baja / Media / Alta / Urgente | Enum fijo |
 | Borrado de Proyecto con contenido | **Decisión superada, ver §13** — originalmente hard delete en cascada; revisado a soft-delete + regla "no borrar si tiene tareas" durante Fase 2 | Ver §13 para el detalle y la justificación del cambio |
 | Dónde vive el cálculo de posición | Backend autoritativo (LexoRank); frontend reordena array localmente para optimistic update | Evita duplicar lógica de negocio crítica en dos lenguajes |
-| Almacenamiento del JWT en cliente | Memoria (variable de servicio Angular), no localStorage ni httpOnly cookie | El enunciado (6.2) exige un interceptor que **adjunte** el token manualmente — una cookie httpOnly se envía automáticamente y no requeriría interceptor, por lo que el propio diseño del enunciado indica token accesible desde JS |
+| Almacenamiento del JWT en cliente | **Decisión revisada, ver §17** — originalmente memoria pura; revisado a `sessionStorage` durante la Fase 4 | Ver §17 para el detalle y la justificación del cambio |
 | Mapeo Entity↔DTO | Manual, centralizado en métodos de extensión por entidad | Explícito y defendible, sin duplicación inline en cada Handler |
 | Diagrama de base de datos | Imagen PNG (ERD) embebida en README, generada desde el esquema real de las migraciones | Cumple la restricción explícita de 8: "imagen solamente, no textos de otras herramientas externas" |
 
@@ -315,3 +315,88 @@ Antes de escribir código de Fase 3 (CRUD de Tareas, tablero kanban, drag&drop, 
 **Por qué:** el tablero es la vista principal de Fase 3 y se carga completa en cada visita/recarga (requisito 6.6: persistencia verificable al recargar). Una sola consulta EF Core proyectada (columnas + tareas vía `Include`, ordenadas por `Column.Order` y `TaskEntity.Order`) evita tanto el problema de N+1 peticiones HTTP como el riesgo de N+1 queries si se arma por columna. Los endpoints CRUD individuales de tareas (`POST/PUT/DELETE /api/tasks`) siguen existiendo para las mutaciones puntuales del tablero; el endpoint de `board` es de solo lectura, para la carga inicial y la recarga completa.
 
 **Alternativa descartada:** componer el tablero en el frontend combinando los endpoints ya existentes de columnas y tareas. Se descarta por el costo de N round-trips en tableros con varias columnas y porque duplicaría en el cliente una lógica de ensamblado que pertenece al servidor.
+
+---
+
+## 15. Diseño de Tiempo Real — decisiones previas a la implementación (Fase 4)
+
+Antes de escribir código de Fase 4 (canal en tiempo real, sección 6.7 del enunciado), se resolvieron cuatro decisiones de diseño, confirmadas explícitamente antes de implementar (regla del flujo obligatorio de `CLAUDE.md`). La tecnología (SignalR) y el criterio de agrupación (grupos por `boardId`/`proyectoId`) ya estaban decididos desde la Fase 0 (§1, §2); esta sección cubre lo que faltaba definir.
+
+### 15.1 Ubicación del Hub y del notificador: Infrastructure, no API
+
+**Decisión:** `IBoardNotifier` es un puerto en `Application` (una interfaz con métodos `NotifyTaskCreatedAsync`, `NotifyTaskUpdatedAsync`, `NotifyTaskDeletedAsync`, `NotifyTaskMovedAsync`). El adaptador concreto (`SignalRBoardNotifier`, usando `IHubContext<BoardHub>`) y el propio `BoardHub` viven en `Infrastructure`, que agrega el paquete `Microsoft.AspNetCore.SignalR.Core` (no requiere el SDK Web completo, solo esa librería). `API` se limita a mapear la ruta del hub (`app.MapHub<BoardHub>("/hubs/board")`) y a la configuración de autenticación del canal.
+
+**Por qué:** mantiene la simetría ya establecida — `Infrastructure` es donde viven **todos** los adaptadores hacia tecnología externa (EF Core, BCrypt/JWT, y ahora SignalR), nunca en `API`. Los Command Handlers de `Application/Tasks` dependen únicamente del puerto `IBoardNotifier`, igual que dependen de `ITaskRepository` — no conocen SignalR, lo que permite reemplazar la tecnología de tiempo real sin tocar un solo Handler (mismo argumento que ya se usó para Repository/Unit of Work en §2).
+
+**Alternativa descartada:** Hub e `IHubContext` en `API`, aprovechando que ese proyecto ya referencia el framework ASP.NET Core completo sin fricción de paquetes. Se descarta porque rompería la única regla arquitectónica no negociable del enunciado (hexagonal, secciones 4 y 6.1): `API` pasaría a contener lógica de adaptador de infraestructura, no solo enrutamiento HTTP/WebSocket de entrada.
+
+### 15.2 Concurrencia optimista con `xmin` — se materializa ahora
+
+**Decisión:** se implementa lo que el §14.2 dejó pendiente: `TaskEntity` mapea la columna de sistema `xmin` de PostgreSQL como token de concurrencia (`builder.UseXminAsConcurrencyToken()` en `TaskEntityConfiguration`). `UpdateTaskCommandHandler`, `MoveTaskCommandHandler` y `DeleteTaskCommandHandler` capturan la excepción de concurrencia (traducida por `UnitOfWork` a `ConcurrencyConflictException`, propia de `Application`, para no filtrar `DbUpdateConcurrencyException` de EF Core hacia arriba) y devuelven `Result.Failure` (409), que ya dispara la reversión visible de 6.6 sin código adicional en el frontend.
+
+**Corrección sobre el supuesto inicial (transparencia):** se asumió que mapear `xmin` no requeriría una migración nueva, por ser una columna de sistema ya presente en toda tabla de Postgres. Al generar la migración de verificación, EF Core sí detectó el nuevo shadow property y generó un `AddColumn` — que además **fallaría en runtime**, porque `xmin` es un nombre de columna reservado por Postgres (`column name "xmin" conflicts with a system column name`). La migración (`AddXminConcurrencyTokenToTasks`) se conserva pero con `Up`/`Down` vacíos a propósito: solo deja constancia en el historial de EF de que `TaskEntity` empezó a usar `xmin`, sin ejecutar ningún DDL real. Se documenta el error de estimación en vez de corregir el ADR en silencio.
+
+**Por qué (a pesar de la migración adicional):** el enunciado 6.7 exige literalmente *propagar* cambios, no detectar conflictos de escritura simultánea sobre la misma tarea — así que esto no es un requisito obligatorio evaluado por nombre. Pero el costo real de implementarlo vía `xmin` sigue siendo bajo (una migración vacía + unas pocas líneas en tres Handlers, sin columna nueva de verdad) frente al valor de cerrar un caso real que Fase 4 introduce por primera vez: dos sesiones pueden ahora editar la misma tarea al mismo tiempo de verdad (antes de tener tiempo real, ese escenario era teórico). Se prioriza cumplir la promesa que el propio ADR dejó escrita en §14.2 en vez de volver a diferirla sin una razón nueva.
+
+**Alternativa descartada:** no implementarlo y revisar el ADR §14.2 documentando que 6.7 no lo exige literalmente. Se descarta porque el costo de implementarlo (bajo, incluso con la migración vacía) es menor que el costo de defender en la entrevista por qué se prometió dos veces (§4 y §14.2) y no se hizo ninguna de las dos.
+
+**Alcance:** solo `TaskEntity` (donde ahora hay edición concurrente real vía tiempo real). No se agrega a `Column` — el reordenamiento de columnas sigue siendo de baja frecuencia y de un solo usuario administrador a la vez, sin el escenario de dos sesiones simultáneas que sí existe en el tablero activo.
+
+### 15.3 El emisor de un cambio no recibe su propio evento por WebSocket
+
+**Decisión:** todas las notificaciones usan `Clients.OthersInGroup(groupName, connectionId)`, nunca `Clients.Group(...)`. El `connectionId` del emisor se resuelve en el endpoint HTTP (via un header o el propio `HubConnection.connectionId` enviado desde el frontend, ver detalle de implementación) y se propaga hasta el notificador.
+
+**Por qué:** el emisor ya actualizó su UI de forma optimista con la respuesta HTTP (mecanismo de 6.6, ya implementado en Fase 3). Si además recibiera su propio evento por el socket, el frontend tendría que distinguir "esto ya lo apliqué localmente" de "esto es nuevo" para no aplicar `moveItemInArray`/`transferArrayItem` dos veces sobre el mismo movimiento — complejidad de deduplicación que no aporta nada, ya que el resultado final es idéntico.
+
+**Alternativa descartada:** `Clients.Group(...)` (incluir al emisor) con deduplicación en el frontend por `taskId` + timestamp o comparando el estado ya aplicado. Se descarta por complejidad innecesaria — excluir al emisor en el backend es una línea de código; deduplicar en el cliente es lógica adicional que además es más frágil (depende de comparar estado, no de una propiedad estructural del mensaje).
+
+### 15.4 Conexión SignalR con alcance de componente (no un servicio de sesión compartido)
+
+**Decisión:** `BoardComponent` crea la conexión (`HubConnectionBuilder`) y se une al grupo del tablero en `ngOnInit`, y la cierra (`hubConnection.stop()`) en `ngOnDestroy`. No existe un servicio raíz que mantenga la conexión viva entre navegaciones.
+
+**Por qué:** el enunciado (6.7, último punto) pide explícitamente "cierre correcto de la conexión y de las suscripciones **al destruir el componente**, sin conexiones huérfanas" — atar el ciclo de vida de la conexión al ciclo de vida del único componente que la usa (`BoardComponent`) hace que ese requisito sea trivialmente verificable (no hay ambigüedad sobre cuándo debe cerrarse) y evita mantener un socket abierto cuando el usuario ni siquiera está viendo un tablero.
+
+**Alternativa descartada:** un servicio singleton (`RealtimeService` a nivel de `core/`) que mantiene la conexión durante toda la sesión autenticada. Se descarta por sobre-ingeniería para el alcance actual — solo existe una vista que consume tiempo real (`BoardComponent`); un servicio compartido solo se justificaría si varias vistas necesitaran la misma conexión simultáneamente, lo que no ocurre en este proyecto.
+
+### 15.5 Eventos emitidos y su forma
+
+**Decisión:** cuatro eventos, uno por operación de negocio ya separada en Application (§14.1): `TaskCreated`, `TaskUpdated`, `TaskDeleted`, `TaskMoved`. Los tres primeros llevan el `TaskResponseDto` ya existente (mismo shape que la API REST); `TaskDeleted` lleva solo `{ taskId, columnId }` (no hay DTO de una entidad borrada); `TaskMoved` lleva `{ taskId, targetColumnId, targetIndex, order }` — el índice que el propio emisor ya usó para calcular la posición, para que las demás sesiones apliquen el mismo `moveItemInArray`/`transferArrayItem` que ya usa `BoardComponent.onDrop` en vez de recalcular posiciones a partir del string de orden.
+
+**Por qué:** reutilizar los DTOs y el vocabulario de eventos que ya distingue Update de Move (§14.1) evita introducir un segundo modelo de datos solo para tiempo real. Enviar `targetIndex` (no solo `order`) permite que el frontend aplique el mismo código de reordenamiento de array que ya tiene y ya está probado (`board.component.spec.ts`), en vez de escribir una segunda función que reconstruya el índice a partir de la clave LexoRank.
+
+---
+
+## 16. Cierre de sesión con revocación real de JWT
+
+No exigido por el enunciado, pedido explícitamente durante la Fase 4 (mostrar el usuario logueado en el nav y un logout que invalide el token). Se presentaron dos alcances antes de implementar: (a) limpiar el token solo en el cliente (lo que `AuthService.logout()` ya hacía) o (b) revocación real en servidor. Se confirmó (b).
+
+**Decisión:** blocklist de JWT revocados por `jti`. `POST /api/auth/logout` (autenticado) lee el `jti` y el `exp` del propio token de la petición y los persiste; `JwtBearerEvents.OnTokenValidated` (Infrastructure) rechaza cualquier request cuyo `jti` esté en la blocklist, en cada endpoint protegido **y** en el hub de SignalR (comparten la misma configuración de `AddJwtBearer`, ver §15).
+
+**Por qué un `jti` no es un token completo:** revocar por `jti` (un identificador corto, no el JWT completo) evita que la blocklist crezca con strings largos y evita tener que parsear/comparar el token entero en cada request — el middleware de validación ya expone los claims decodificados, `jti` incluido.
+
+**Dónde vive la entidad de revocación:** `RevokedToken` (Infrastructure/Persistence/Entities, **no** `Domain/Entities`) — es un registro técnico de seguridad sin reglas de negocio propias (no tiene invariantes, no participa de ningún caso de uso de negocio), a diferencia de `User`/`Project`/`Column`/`TaskEntity`. Coherente con cómo `IPasswordHasher`/`IJwtTokenGenerator` ya se tratan como infraestructura de seguridad y no como dominio.
+
+**Alternativa descartada — limpieza periódica de tokens expirados:** la tabla `revoked_tokens` no tiene un job de limpieza en background. Se acepta el crecimiento no acotado (bajo, con 2 usuarios semilla y tokens de corta duración) en vez de agregar un `BackgroundService` adicional; `ExpiresAtUtc` se persiste igual, dejando la puerta abierta a un `DELETE WHERE expires_at < now()` si el volumen real lo justificara.
+
+**Alternativa descartada — refresh tokens:** resolvería la revocación de forma más "estándar" (access token de vida muy corta + refresh token de vida larga, revocable), pero es una reestructuración completa del flujo de autenticación (nuevo endpoint, nuevo almacenamiento, rotación) no pedida y fuera de alcance para un cierre de sesión explícito por parte del usuario.
+
+**Frontend:** `AuthService.logout()` llama a `POST /api/auth/logout` (si hay token) y limpia el estado local en memoria y navega al login tanto si la llamada tiene éxito como si falla — un fallo de red en el logout no debe dejar al usuario atrapado en una sesión que ya quiere cerrar. `AuthInterceptor` excluye `/auth/logout` (además de `/auth/login`, ya excluido) del logout automático por 401, para no disparar una segunda llamada de logout recursiva si el propio logout devuelve 401.
+
+---
+
+## 17. Almacenamiento del JWT en cliente — revisión de la decisión inicial (Fase 4)
+
+**Decisión superada** (no se borra, se documenta el cambio — regla de este archivo): §7 establecía JWT solo en memoria (variable de instancia de `AuthService`), explícitamente **sin** `localStorage`. La justificación original solo comparaba memoria/`localStorage` contra cookie httpOnly (el enunciado 6.2 exige un interceptor que adjunte el token, lo que descarta la cookie automática) — nunca argumentó memoria por sobre `sessionStorage` específicamente.
+
+**Cómo se detectó:** al usar la aplicación de forma más activa durante la Fase 4 (agregar el nombre de usuario y el logout al nav), recargar la página con una sesión activa siempre desloguea — la memoria de la SPA se destruye por completo en cada F5. Es el costo real, no solo teórico, de "memoria pura", y no estaba señalado como una fricción de UX esperada en ningún lado del README ni del ADR.
+
+**Decisión nueva (2026-08-01):** el JWT y los datos del usuario actual (`{name, email}`) se guardan en `sessionStorage` en vez de en una variable de instancia.
+
+**Por qué:**
+- `sessionStorage` sigue exigiendo que `AuthInterceptor` adjunte el header manualmente (no es automático como una cookie) — la razón original del ADR para descartar la cookie httpOnly sigue vigente y **no** aplica como argumento en contra de `sessionStorage`.
+- Sobrevive a recargar la página (soluciona la fricción real detectada) pero se pierde al cerrar la pestaña o el navegador — no es tan persistente como `localStorage`.
+- Sigue siendo accesible desde JavaScript (como memoria o `localStorage`), así que la superficie de riesgo ante un XSS no cambia en calidad — solo en duración: con memoria pura, un token robado deja de servir en cuanto la pestaña se recarga o cierra; con `sessionStorage`, sirve mientras la pestaña siga abierta (pero no sobrevive a cerrarla, a diferencia de `localStorage`).
+
+**Alternativa descartada — `localStorage`:** sobrevive incluso a cerrar y reabrir el navegador, la opción más cómoda para el usuario. Se descarta porque un token robado por XSS seguiría sirviendo indefinidamente (hasta su expiración natural) sin importar si la víctima cierra el navegador — una ventana de exposición mayor que no se justifica solo por comodidad, dado que igual hace falta el interceptor en ambos casos.
+
+**Alternativa descartada — mantener memoria pura:** es la opción más resistente a XSS (nada persiste nunca, ni siquiera dentro de la misma pestaña tras un F5), pero la fricción de UX (perder la sesión en cada recarga accidental) pesa más que esa ganancia marginal de seguridad para una aplicación de evaluación con 2 usuarios semilla — el propio enunciado no exige ningún nivel de persistencia de sesión, así que es una decisión de criterio, no de cumplimiento.
