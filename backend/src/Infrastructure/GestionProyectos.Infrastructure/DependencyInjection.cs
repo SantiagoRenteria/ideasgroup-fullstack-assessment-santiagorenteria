@@ -32,6 +32,18 @@ public static class DependencyInjection
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<SecurityOptions>(configuration.GetSection(SecurityOptions.SectionName));
 
+        // Whitelist explicita (enunciado seccion 4, checklist de seguridad
+        // docs/METODOLOGIA.md §9.3) -- nunca AllowAnyOrigin. Sin AllowCredentials: la API
+        // usa JWT por header Bearer, no cookies, asi que no hace falta y ademas es
+        // incompatible con multiples origenes.
+        var corsOptions = configuration.GetSection(CorsOptions.SectionName).Get<CorsOptions>() ?? new CorsOptions();
+
+        services.AddCors(options => options.AddDefaultPolicy(policy =>
+        {
+            if (!string.IsNullOrWhiteSpace(corsOptions.AllowedOrigin))
+                policy.WithOrigins(corsOptions.AllowedOrigin).AllowAnyHeader().AllowAnyMethod();
+        }));
+
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IProjectRepository, ProjectRepository>();
         services.AddScoped<IColumnRepository, ColumnRepository>();

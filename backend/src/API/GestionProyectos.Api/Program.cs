@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using FluentValidation;
 using GestionProyectos.Api.Endpoints;
 using GestionProyectos.Application;
@@ -7,6 +8,7 @@ using GestionProyectos.Infrastructure.Persistence;
 using GestionProyectos.Infrastructure.Realtime;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Serilog;
@@ -63,6 +65,23 @@ try
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
 
+    // Rate limiting en login (docs/METODOLOGIA.md §9.3): ventana fija de 5 intentos por
+    // minuto, particionada por IP -- sin particionar, un cliente agotaria el limite global
+    // y bloquearia el login de todos los demas. Vive aca (API, no Infrastructure) porque
+    // Microsoft.AspNetCore.RateLimiting solo viene con el shared framework de Sdk.Web.
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        options.AddPolicy("login", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "desconocido",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+    });
+
     var app = builder.Build();
 
     using (var scope = app.Services.CreateScope())
@@ -107,6 +126,8 @@ try
         await context.Response.WriteAsJsonAsync(new { error = "Ocurrio un error inesperado." });
     }));
 
+    app.UseCors();
+    app.UseRateLimiter();
     app.UseAuthentication();
     app.UseAuthorization();
 

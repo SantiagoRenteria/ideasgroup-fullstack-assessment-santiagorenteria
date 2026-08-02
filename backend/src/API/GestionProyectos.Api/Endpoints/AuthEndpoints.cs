@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using GestionProyectos.Application.Auth;
 using MediatR;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace GestionProyectos.Api.Endpoints;
 
@@ -20,7 +21,7 @@ public static class AuthEndpoints
             return result.IsSuccess
                 ? Results.Ok(result.Value)
                 : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status401Unauthorized);
-        });
+        }).RequireRateLimiting("login");
 
         // Revocacion real del JWT (ADR §16), no solo limpieza en el cliente: el jti y el
         // exp se leen del propio token validado de la peticion, nunca del cuerpo.
