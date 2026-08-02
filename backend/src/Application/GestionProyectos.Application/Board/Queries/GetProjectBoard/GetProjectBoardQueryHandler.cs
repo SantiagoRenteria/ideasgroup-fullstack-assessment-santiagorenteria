@@ -49,7 +49,7 @@ public class GetProjectBoardQueryHandler : IRequestHandler<GetProjectBoardQuery,
                 c.Id,
                 c.Name,
                 c.Order,
-                tasksByColumn[c.Id].OrderBy(t => t.Order, StringComparer.Ordinal).Select(t => t.ToDto()).ToList()))
+                tasksByColumn[c.Id].OrderBy(t => t.Order).Select(t => t.ToDto()).ToList()))
             .ToList();
 
         return Result<BoardResponseDto>.Success(new BoardResponseDto(project.Id, project.Name, boardColumns));

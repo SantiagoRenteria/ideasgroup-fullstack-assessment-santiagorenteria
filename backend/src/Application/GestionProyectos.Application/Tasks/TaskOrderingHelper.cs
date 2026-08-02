@@ -12,8 +12,8 @@ internal static class TaskOrderingHelper
     // (0 = inicio de columna, tasksInColumn.Count = final de columna).
     public static string GetOrderForTargetIndex(IReadOnlyList<TaskEntity> tasksInColumn, int targetIndex)
     {
-        var prevOrder = targetIndex > 0 ? tasksInColumn[targetIndex - 1].Order : null;
-        var nextOrder = targetIndex < tasksInColumn.Count ? tasksInColumn[targetIndex].Order : null;
+        var prevOrder = targetIndex > 0 ? tasksInColumn[targetIndex - 1].Order.Value : null;
+        var nextOrder = targetIndex < tasksInColumn.Count ? tasksInColumn[targetIndex].Order.Value : null;
 
         try
         {
