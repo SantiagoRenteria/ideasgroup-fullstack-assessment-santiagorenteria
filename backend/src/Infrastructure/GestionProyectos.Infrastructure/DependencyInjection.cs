@@ -45,6 +45,10 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IBoardNotifier, SignalRBoardNotifier>();
+        // Singleton a proposito: el estado de presencia debe sobrevivir entre conexiones
+        // distintas del mismo proceso (ver BoardPresenceTracker sobre el limite de una
+        // sola instancia, sin backplane distribuido).
+        services.AddSingleton<IBoardPresenceTracker, BoardPresenceTracker>();
         services.AddScoped<ITokenRevocationStore, TokenRevocationStore>();
 
         // JSON en camelCase + enums como string, para paridad real con las respuestas REST

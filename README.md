@@ -34,7 +34,13 @@ Plan completo de 7 días en `docs/fases-implementacion.md`. Estado actual:
 | 3 | Tablero kanban, tareas, drag&drop, cálculo de posición (LexoRank) | ✅ Completa |
 | 4 | Tiempo real (SignalR) | ✅ Completa |
 | 5 | Reportes duales (PDF/Excel) | ✅ Completa |
-| 6 | Pruebas restantes, diagrama ERD | ✅ Completa — opcionales (§7 del enunciado) pendientes de decisión de alcance |
+| 6 | Pruebas restantes, diagrama ERD | ✅ Completa |
+
+**Requisitos deseables (sección 7 del enunciado, suman +5% en conjunto):**
+
+- [x] Filtros del tablero por responsable y prioridad, aplicados también al contenido del reporte
+- [x] Indicador de usuarios conectados al tablero
+- [ ] Búsqueda de tareas por texto
 
 Este README se actualiza al cierre de cada fase — las secciones marcadas "Pendiente" abajo reflejan el diseño ya decidido (documentado en `docs/decisions/arquitectura-decisiones.md`), no lo implementado todavía.
 

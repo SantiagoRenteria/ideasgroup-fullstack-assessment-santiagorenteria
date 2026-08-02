@@ -31,4 +31,17 @@ describe('RealtimeBoardService', () => {
     it('disconnect sin conexion abierta no lanza excepcion', async () => {
         await expectAsync(service.disconnect()).toBeResolved();
     });
+
+    it('connectedUsers$ empieza en una lista vacia', (done) => {
+        service.connectedUsers$.subscribe((users) => {
+            expect(users).toEqual([]);
+            done();
+        });
+    });
+
+    it('leaveBoard limpia connectedUsers$ aunque no haya conexion abierta', async () => {
+        await service.leaveBoard('proj-1');
+
+        service.connectedUsers$.subscribe((users) => expect(users).toEqual([]));
+    });
 });

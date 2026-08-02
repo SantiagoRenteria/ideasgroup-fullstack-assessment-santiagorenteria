@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import * as signalR from '@microsoft/signalr';
-import { Subject } from 'rxjs';
+import { BehaviorSubject, Subject } from 'rxjs';
 import { environment } from 'src/environments/environment';
 import { AuthService } from '../../../core/services/auth.service';
 import { BoardTask } from '../models/task.model';
@@ -27,11 +27,15 @@ export class RealtimeBoardService {
     private readonly taskUpdatedSubject = new Subject<BoardTask>();
     private readonly taskDeletedSubject = new Subject<TaskDeletedPayload>();
     private readonly taskMovedSubject = new Subject<TaskMovedPayload>();
+    // BehaviorSubject (no Subject): un componente que se suscribe despues de JoinBoard
+    // debe recibir la lista actual de inmediato, no solo los cambios futuros.
+    private readonly connectedUsersSubject = new BehaviorSubject<string[]>([]);
 
     readonly taskCreated$ = this.taskCreatedSubject.asObservable();
     readonly taskUpdated$ = this.taskUpdatedSubject.asObservable();
     readonly taskDeleted$ = this.taskDeletedSubject.asObservable();
     readonly taskMoved$ = this.taskMovedSubject.asObservable();
+    readonly connectedUsers$ = this.connectedUsersSubject.asObservable();
 
     constructor(private authService: AuthService) {}
 
@@ -54,6 +58,7 @@ export class RealtimeBoardService {
         this.connection.on('TaskUpdated', (task: BoardTask) => this.taskUpdatedSubject.next(task));
         this.connection.on('TaskDeleted', (payload: TaskDeletedPayload) => this.taskDeletedSubject.next(payload));
         this.connection.on('TaskMoved', (payload: TaskMovedPayload) => this.taskMovedSubject.next(payload));
+        this.connection.on('BoardPresenceChanged', (users: string[]) => this.connectedUsersSubject.next(users));
 
         // La reconexion automatica abre una conexion nueva (nuevo connectionId): la
         // membresia de grupo del servidor se pierde y hay que solicitarla de nuevo.
@@ -74,10 +79,12 @@ export class RealtimeBoardService {
     async leaveBoard(projectId: string): Promise<void> {
         this.currentProjectId = null;
         await this.connection?.invoke('LeaveBoard', projectId);
+        this.connectedUsersSubject.next([]);
     }
 
     async disconnect(): Promise<void> {
         await this.connection?.stop();
         this.connection = null;
+        this.connectedUsersSubject.next([]);
     }
 }

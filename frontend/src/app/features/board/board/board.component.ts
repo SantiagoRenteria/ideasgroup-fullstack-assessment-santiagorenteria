@@ -30,6 +30,7 @@ export class BoardComponent implements OnInit, OnDestroy {
     users: AppUser[] = [];
     filterAssigneeId: string | null = null;
     filterPriority: TaskPriority | null = null;
+    connectedUsers: string[] = [];
 
     readonly priorityLabels = TASK_PRIORITY_LABELS;
     readonly prioritySeverity = TASK_PRIORITY_SEVERITY;
@@ -84,7 +85,8 @@ export class BoardComponent implements OnInit, OnDestroy {
             this.realtimeService.taskCreated$.subscribe((task) => this.applyRemoteTaskCreated(task)),
             this.realtimeService.taskUpdated$.subscribe((task) => this.replaceTaskInPlace(task)),
             this.realtimeService.taskDeleted$.subscribe((payload) => this.applyRemoteTaskDeleted(payload)),
-            this.realtimeService.taskMoved$.subscribe((payload) => this.applyRemoteTaskMoved(payload))
+            this.realtimeService.taskMoved$.subscribe((payload) => this.applyRemoteTaskMoved(payload)),
+            this.realtimeService.connectedUsers$.subscribe((users) => (this.connectedUsers = users))
         );
     }
 
