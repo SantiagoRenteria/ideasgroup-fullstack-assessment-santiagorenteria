@@ -22,14 +22,27 @@ public class ProjectReportRepository : IProjectReportRepository
     // no existe" (0 filas) de "proyecto existe pero sin tareas" (>=1 fila, Tasks vacío tras
     // filtrar). Los HasQueryFilter de soft-delete (Project/Column/TaskEntity) se aplican
     // solos, sin repetir el filtro aquí.
-    public async Task<ProjectReportDto?> GetReportAsync(Guid projectId, CancellationToken cancellationToken)
+    //
+    // assigneeId/priority se aplican como Where() sobre la FUENTE del join (filteredTasks),
+    // no como filtro posterior sobre el resultado -- si fuera un WHERE sobre las columnas de
+    // tasks despues del join, Postgres degradaria el LEFT JOIN a INNER JOIN de facto (una
+    // fila cuyo lado derecho no cumple la condicion se descarta), volviendo a mezclar
+    // "proyecto sin tareas que matcheen el filtro" con "proyecto inexistente".
+    public async Task<ProjectReportDto?> GetReportAsync(
+        Guid projectId,
+        Guid? assigneeId,
+        TaskPriority? priority,
+        CancellationToken cancellationToken)
     {
+        var filteredTasks = _dbContext.Tasks.AsNoTracking()
+            .Where(t => (assigneeId == null || t.AssigneeId == assigneeId) && (priority == null || t.Priority == priority));
+
         var rows = await (
             from p in _dbContext.Projects.AsNoTracking()
             where p.Id == projectId
             join c in _dbContext.Columns.AsNoTracking() on p.Id equals c.ProjectId into columnsJoin
             from c in columnsJoin.DefaultIfEmpty()
-            join t in _dbContext.Tasks.AsNoTracking() on c.Id equals t.ColumnId into tasksJoin
+            join t in filteredTasks on c.Id equals t.ColumnId into tasksJoin
             from t in tasksJoin.DefaultIfEmpty()
             join u in _dbContext.Users.AsNoTracking() on t.AssigneeId equals u.Id into assigneeJoin
             from u in assigneeJoin.DefaultIfEmpty()

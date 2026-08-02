@@ -21,7 +21,8 @@ public class ExportProjectReportQueryHandlerTests
     [Fact]
     public async Task Handle_ProyectoNoExiste_RetornaFailure()
     {
-        _reportRepository.GetReportAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((ProjectReportDto?)null);
+        _reportRepository.GetReportAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<TaskPriority?>(), Arg.Any<CancellationToken>())
+            .Returns((ProjectReportDto?)null);
         var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter });
 
         var result = await handler.Handle(new ExportProjectReportQuery(Guid.NewGuid(), "pdf"), CancellationToken.None);
@@ -34,7 +35,8 @@ public class ExportProjectReportQueryHandlerTests
     public async Task Handle_FormatoNoSoportado_RetornaFailure()
     {
         var projectId = Guid.NewGuid();
-        _reportRepository.GetReportAsync(projectId, Arg.Any<CancellationToken>()).Returns(BuildReport(projectId));
+        _reportRepository.GetReportAsync(projectId, Arg.Any<Guid?>(), Arg.Any<TaskPriority?>(), Arg.Any<CancellationToken>())
+            .Returns(BuildReport(projectId));
         _pdfExporter.Format.Returns("pdf");
         var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter });
 
@@ -48,7 +50,8 @@ public class ExportProjectReportQueryHandlerTests
     public async Task Handle_FormatoSoportadoCaseInsensitive_RetornaArchivoConFechaDeGeneracionEstampada()
     {
         var projectId = Guid.NewGuid();
-        _reportRepository.GetReportAsync(projectId, Arg.Any<CancellationToken>()).Returns(BuildReport(projectId));
+        _reportRepository.GetReportAsync(projectId, Arg.Any<Guid?>(), Arg.Any<TaskPriority?>(), Arg.Any<CancellationToken>())
+            .Returns(BuildReport(projectId));
         _pdfExporter.Format.Returns("pdf");
         _pdfExporter.ContentType.Returns("application/pdf");
         _pdfExporter.FileExtension.Returns("pdf");
@@ -65,5 +68,26 @@ public class ExportProjectReportQueryHandlerTests
 
         Assert.NotNull(passedReport);
         Assert.NotEqual(default, passedReport!.GeneratedAt);
+    }
+
+    // Deseable seccion 7: el filtro activo en el tablero debe llegar intacto hasta la
+    // consulta que arma el reporte -- no alcanza con probarlo en ProjectReportRepository
+    // (ver test de runtime contra Postgres), tambien hay que probar que el handler no lo
+    // pierde ni lo reemplaza en el camino.
+    [Fact]
+    public async Task Handle_ConFiltrosDeResponsableYPrioridad_LosPropagaAlRepositorio()
+    {
+        var projectId = Guid.NewGuid();
+        var assigneeId = Guid.NewGuid();
+        _reportRepository.GetReportAsync(projectId, assigneeId, TaskPriority.Urgent, Arg.Any<CancellationToken>())
+            .Returns(BuildReport(projectId));
+        _pdfExporter.Format.Returns("pdf");
+        _pdfExporter.Export(Arg.Any<ProjectReportDto>()).Returns(new byte[] { 1 });
+        var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter });
+
+        var result = await handler.Handle(new ExportProjectReportQuery(projectId, "pdf", assigneeId, TaskPriority.Urgent), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        await _reportRepository.Received(1).GetReportAsync(projectId, assigneeId, TaskPriority.Urgent, Arg.Any<CancellationToken>());
     }
 }

@@ -24,7 +24,7 @@ public class ExportProjectReportQueryHandler : IRequestHandler<ExportProjectRepo
 
     public async Task<Result<ExportedReportDto>> Handle(ExportProjectReportQuery request, CancellationToken cancellationToken)
     {
-        var report = await _reportRepository.GetReportAsync(request.ProjectId, cancellationToken);
+        var report = await _reportRepository.GetReportAsync(request.ProjectId, request.AssigneeId, request.Priority, cancellationToken);
 
         if (report is null)
             return Result<ExportedReportDto>.Failure(ProjectNotFound);
