@@ -41,7 +41,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             new User(
                 Guid.Parse("6f9b1c2e-1a2b-4c3d-8e4f-000000000001"),
                 "Administrador",
-                "admin@ideasgroup.test",
+                "luis.renteria@ideasgroup.test",
                 SeedPasswordHash),
             new User(
                 Guid.Parse("6f9b1c2e-1a2b-4c3d-8e4f-000000000002"),

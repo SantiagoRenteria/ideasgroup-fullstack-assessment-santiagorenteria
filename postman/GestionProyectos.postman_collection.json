@@ -27,7 +27,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"email\": \"admin@ideasgroup.test\",\n  \"password\": \"IdeasGroup2026!\"\n}"
+                            "raw": "{\n  \"email\": \"luis.renteria@ideasgroup.test\",\n  \"password\": \"IdeasGroup2026!\"\n}"
                         },
                         "url": {
                             "raw": "{{baseUrl}}/auth/login",
@@ -61,7 +61,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"email\": \"admin@ideasgroup.test\",\n  \"password\": \"incorrecta\"\n}"
+                            "raw": "{\n  \"email\": \"luis.renteria@ideasgroup.test\",\n  \"password\": \"incorrecta\"\n}"
                         },
                         "url": {
                             "raw": "{{baseUrl}}/auth/login",
