@@ -482,6 +482,24 @@ Los mocks de repositorio en los tests unitarios nunca ejercitan el modelo real d
 
 ---
 
+## 23. Auditoría post-entrega — Tests de integración con Testcontainers (fix/integration-tests-testcontainers)
+
+Cuarto de los 5 hallazgos de la auditoría crítica (ver §20-§22). La verificación manual del §22.5 (y, antes, la verificación manual que el propio §18.2 admite haber hecho "a mano" para el `LEFT JOIN` del reporte, y el §15.2 para `xmin`) demuestra que este proyecto sí valida comportamiento real contra Postgres -- pero nunca queda protegido de regresión: la próxima vez que alguien toque esa consulta o esa configuración, nadie vuelve a verificarlo a mano por defecto.
+
+**Decisión:** nuevo proyecto `GestionProyectos.IntegrationTests` (xUnit + `Testcontainers.PostgreSql`), agregado a `GestionProyectos.sln`. Un solo contenedor Postgres real compartido por toda la suite (`ICollectionFixture`, no un contenedor por test -- levantar el contenedor es el costo caro, correr las migraciones sobre él no), con las migraciones reales aplicadas (`Database.MigrateAsync()`, incluida la seed data vía `HasData`) antes de correr cualquier test.
+
+**Tres tests, elegidos por lo que un mock no puede probar, no por cobertura numérica** (mismo criterio de riesgo que ya rige la suite unitaria, §2 METODOLOGIA):
+
+1. `ProjectReportRepositoryTests`: confirma en código lo que §18.2 decía haber verificado a mano -- un proyecto sin tareas produce 1 fila con campos de tarea en `null`, no 0 filas (que sería indistinguible de "el proyecto no existe"). El `LEFT JOIN` encadenado (`Project -> Columns -> Tasks -> User`) solo se puede probar de verdad contra el motor real.
+2. `TaskConcurrencyTests`: confirma el conflicto de `xmin` (§15.2) con dos `AppDbContext` reales modificando la misma tarea -- y, en el mismo archivo, confirma la contraparte que justifica el diseño de agregados independientes (§22.3): dos tareas *distintas* del mismo proyecto no compiten por el mismo token y ambas guardan sin conflicto. `xmin` es una columna de sistema gestionada por Postgres; ningún mock la reproduce.
+3. `ProjectRepositoryTests`: confirma el filtro `ILike` + índice GIN `pg_trgm` (sección 6.3, §9) con coincidencia parcial e insensible a mayúsculas -- un provider en memoria no tiene la extensión `pg_trgm` instalada.
+
+**Efecto colateral aceptado en CI:** al agregar el proyecto al `.sln`, `dotnet test GestionProyectos.sln` (usado por `.github/workflows/ci.yml`) ahora corre ambas suites juntas. Se acepta porque los runners de GitHub Actions (`ubuntu-latest`) traen Docker disponible por defecto -- el mismo mecanismo que ya usa Testcontainers localmente -- sin pasos adicionales de configuración. No se filtró la suite de integración fuera de CI (por ejemplo, con un trait/categoría y un job separado) porque habría sido complejidad anticipada para un problema que, hasta que se demuestre lo contrario tras el primer run de CI post-merge, no existe: el runner soporta Docker nativamente y Testcontainers está diseñado exactamente para este entorno.
+
+**Alcance descartado -- filtrar por trait o mover a un job de CI separado:** se evaluó marcar los tests de integración con un `[Trait("Category", "Integration")]` y excluirlos del job principal de CI, corriéndolos en un job aparte con más tiempo de timeout. Se descartó por ahora: añade un segundo job de CI, un paso de configuración adicional, y resuelve un problema (tiempo de CI, aislamiento de fallos) que aún no se ha observado -- si el primer run de CI post-merge muestra que Testcontainers no funciona limpiamente en el runner o que el tiempo de CI se vuelve inaceptable, se revisita esta decisión y se documenta el cambio aquí, siguiendo el mismo criterio de "no resolver un problema hipotético antes de confirmarlo" que ya rige otras decisiones de este documento (por ejemplo, la revocación por `jti` en vez de refresh tokens, §16).
+
+---
+
 ## 20. Auditoría post-entrega — Result tipado por ErrorType (fix/typed-result-errors)
 
 Auditoría crítica solicitada explícitamente por Santiago sobre el proyecto ya completo (2026-08-02), pidiendo una revisión de evaluador senior, no de instructor. Se identificaron 5 hallazgos priorizados de más sencillo a más difícil; esta entrada documenta el primero, ya cerrado. Los otros 4 (logging pipeline behavior, Value Object `Email`, tests de integración con Testcontainers, Outbox pattern para la notificación del tablero) se documentan en sus propias entradas al implementarse.

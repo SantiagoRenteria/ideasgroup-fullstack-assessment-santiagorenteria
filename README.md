@@ -188,12 +188,30 @@ Migraciones incrementales que generan este esquema: `backend/src/Infrastructure/
 
 | Capa | Cantidad | Cobertura |
 |---|---|---|
-| Backend (xUnit) | 110 | Domain (entidades, validaciones, soft-delete, `LexoRankService`), Application (handlers CQRS con NSubstitute, incluida la regla "no borrar con tareas", el rebalanceo de `MoveTaskCommandHandler`, la notificación por tiempo real con exclusión del emisor, el conflicto de concurrencia `xmin`, la revocación de tokens en `LogoutCommandHandler` y `ExportProjectReportQueryHandler`), Infrastructure (BCrypt, JWT, `QuestPdfReportExporter` y `ClosedXmlReportExporter` releyendo el archivo generado) |
+| Backend unitario (xUnit) | 155 | Domain (entidades, Value Objects `Email`/`DateRange`/`LexoRankKey`, soft-delete, `LexoRankService`), Application (handlers CQRS con NSubstitute, incluida la regla "no borrar con tareas", el rebalanceo de `MoveTaskCommandHandler`, la notificación por tiempo real con exclusión del emisor, el conflicto de concurrencia `xmin`, la revocación de tokens en `LogoutCommandHandler`, `ExportProjectReportQueryHandler` y el `LoggingBehavior` transversal), Infrastructure (BCrypt, JWT, `QuestPdfReportExporter` y `ClosedXmlReportExporter` releyendo el archivo generado) |
+| Backend integración (xUnit + Testcontainers) | 7 | Contra PostgreSQL real, no mocks — ver más abajo |
 | Frontend (Jasmine/Karma) | 62 | `ProjectService`, `ColumnService`, `TaskService` (incluido el header `X-Realtime-Connection-Id`), `BoardService`, `UserService`, `RealtimeBoardService`, `ReportService`, `AuthService` (revocación en logout), `AuthInterceptor`, `ProjectFormComponent`, `AppTopBarComponent`, `BoardComponent` (reordenamiento optimista y reversión, aplicación de los cuatro eventos remotos de tiempo real, y descarga de reportes) |
 
 Mínimo exigido por el enunciado (sección 6.9): 5 backend + 5 frontend. Superado en ambas capas.
 
 La prueba unitaria del cálculo de posición al reordenar (única exigida por nombre, sección 6.9) está en `backend/tests/GestionProyectos.UnitTests/Domain/LexoRankServiceTests.cs`, escrita como TDD antes del resto de la Fase 3: cubre inserción normal, bordes de columna, claves adyacentes sin hueco y el caso límite que fuerza rebalanceo.
+
+### 10.1 Tests de integración (`GestionProyectos.IntegrationTests`)
+
+Los tests unitarios mockean todos los repositorios — nunca ejercitan el modelo real de EF Core contra PostgreSQL. `GestionProyectos.IntegrationTests` (Testcontainers.PostgreSql) levanta un contenedor Postgres real, aplica las migraciones reales (incluida la seed data) y verifica comportamiento que un mock no puede reproducir:
+
+- **`ProjectReportRepositoryTests`**: el `LEFT JOIN` encadenado del reporte (sección 6.8) distingue correctamente "proyecto sin tareas" (1 fila, campos de tarea en `null`) de "proyecto inexistente" (`null`) — ver `docs/decisions/arquitectura-decisiones.md` §18.2.
+- **`TaskConcurrencyTests`**: el conflicto de concurrencia optimista vía `xmin` (§15.2) ocurre de verdad cuando dos sesiones modifican la misma tarea, y **no** ocurre entre tareas distintas del mismo proyecto — la razón concreta por la que este proyecto usa un token de concurrencia por tarea y no uno solo por proyecto (§22.3).
+- **`ProjectRepositoryTests`**: el filtro de coincidencia parcial insensible a mayúsculas (sección 6.3, `EF.Functions.ILike` + índice GIN `pg_trgm`) funciona contra Postgres real — un provider en memoria no tiene la extensión `pg_trgm`.
+
+**Requiere Docker** corriendo (usa el socket de Docker para levantar el contenedor). Correr solo estos tests:
+
+```bash
+cd backend
+dotnet test tests/GestionProyectos.IntegrationTests/GestionProyectos.IntegrationTests.csproj
+```
+
+`dotnet test GestionProyectos.sln` corre ambas suites (unitaria + integración) — el pipeline de CI (`.github/workflows/ci.yml`) los ejecuta juntos, ya que los runners de GitHub Actions traen Docker disponible por defecto.
 
 ---
 
