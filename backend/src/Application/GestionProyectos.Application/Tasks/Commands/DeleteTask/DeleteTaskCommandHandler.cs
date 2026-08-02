@@ -38,7 +38,7 @@ public class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand, Resul
         if (task is null)
         {
             _logger.LogWarning("Intento de eliminar la tarea inexistente {TaskId}", request.Id);
-            return Result.Failure(TaskNotFound);
+            return Result.Failure(TaskNotFound, ErrorType.NotFound);
         }
 
         var columnId = task.ColumnId;
@@ -51,7 +51,7 @@ public class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand, Resul
         catch (ConcurrencyConflictException)
         {
             _logger.LogWarning("Conflicto de concurrencia al eliminar la tarea {TaskId}: otra sesion la modifico primero", request.Id);
-            return Result.Failure(ConcurrencyConflict);
+            return Result.Failure(ConcurrencyConflict, ErrorType.Conflict);
         }
 
         var column = await _columnRepository.GetByIdAsync(columnId, cancellationToken);

@@ -16,7 +16,7 @@ public static class BoardEndpoints
 
             return result.IsSuccess
                 ? Results.Ok(result.Value)
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+                : result.ToErrorResponse();
         })
         .WithTags("Board")
         .RequireAuthorization();

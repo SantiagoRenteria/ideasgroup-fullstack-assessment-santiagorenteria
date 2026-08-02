@@ -2,6 +2,7 @@ using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.UpdateTask;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -56,6 +57,7 @@ public class UpdateTaskCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(UpdateTaskCommandHandler.TaskNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -94,6 +96,7 @@ public class UpdateTaskCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(UpdateTaskCommandHandler.ConcurrencyConflict, result.Error);
+        Assert.Equal(ErrorType.Conflict, result.ErrorType);
         await _boardNotifier.DidNotReceive().TaskUpdatedAsync(Arg.Any<Guid>(), Arg.Any<TaskResponseDto>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 }

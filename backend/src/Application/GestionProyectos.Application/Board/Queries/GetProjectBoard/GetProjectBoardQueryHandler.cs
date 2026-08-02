@@ -36,7 +36,7 @@ public class GetProjectBoardQueryHandler : IRequestHandler<GetProjectBoardQuery,
         if (project is null)
         {
             _logger.LogWarning("Intento de consultar el tablero del proyecto inexistente {ProjectId}", request.ProjectId);
-            return Result<BoardResponseDto>.Failure(ProjectNotFound);
+            return Result<BoardResponseDto>.Failure(ProjectNotFound, ErrorType.NotFound);
         }
 
         var columns = await _columnRepository.ListByProjectAsync(request.ProjectId, cancellationToken);

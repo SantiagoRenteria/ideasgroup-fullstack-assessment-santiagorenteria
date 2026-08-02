@@ -31,7 +31,7 @@ public class ListColumnsByProjectQueryHandler : IRequestHandler<ListColumnsByPro
         if (project is null)
         {
             _logger.LogWarning("Intento de listar columnas del proyecto inexistente {ProjectId}", request.ProjectId);
-            return Result<IReadOnlyList<ColumnResponseDto>>.Failure(ProjectNotFound);
+            return Result<IReadOnlyList<ColumnResponseDto>>.Failure(ProjectNotFound, ErrorType.NotFound);
         }
 
         var columns = await _columnRepository.ListByProjectAsync(request.ProjectId, cancellationToken);

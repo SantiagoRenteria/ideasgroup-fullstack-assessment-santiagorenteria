@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Columns.Queries.ListColumnsByProject;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -45,5 +46,6 @@ public class ListColumnsByProjectQueryHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ListColumnsByProjectQueryHandler.ProjectNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
     }
 }

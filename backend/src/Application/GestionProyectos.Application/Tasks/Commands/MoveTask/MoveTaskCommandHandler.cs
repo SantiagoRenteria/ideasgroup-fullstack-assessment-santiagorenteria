@@ -40,7 +40,7 @@ public class MoveTaskCommandHandler : IRequestHandler<MoveTaskCommand, Result<Ta
         if (task is null)
         {
             _logger.LogWarning("Intento de mover la tarea inexistente {TaskId}", request.Id);
-            return Result<TaskResponseDto>.Failure(TaskNotFound);
+            return Result<TaskResponseDto>.Failure(TaskNotFound, ErrorType.NotFound);
         }
 
         var targetColumn = await _columnRepository.GetByIdAsync(request.TargetColumnId, cancellationToken);
@@ -48,7 +48,7 @@ public class MoveTaskCommandHandler : IRequestHandler<MoveTaskCommand, Result<Ta
         if (targetColumn is null)
         {
             _logger.LogWarning("Intento de mover la tarea {TaskId} a la columna inexistente {TargetColumnId}", request.Id, request.TargetColumnId);
-            return Result<TaskResponseDto>.Failure(TargetColumnNotFound);
+            return Result<TaskResponseDto>.Failure(TargetColumnNotFound, ErrorType.NotFound);
         }
 
         var targetColumnTasks = (await _taskRepository.ListByColumnAsync(request.TargetColumnId, cancellationToken))
@@ -60,7 +60,7 @@ public class MoveTaskCommandHandler : IRequestHandler<MoveTaskCommand, Result<Ta
             _logger.LogWarning(
                 "Intento de mover la tarea {TaskId} al indice {TargetIndex}, fuera de rango para la columna {TargetColumnId} ({Count} tareas)",
                 request.Id, request.TargetIndex, request.TargetColumnId, targetColumnTasks.Count);
-            return Result<TaskResponseDto>.Failure(TargetIndexOutOfRange);
+            return Result<TaskResponseDto>.Failure(TargetIndexOutOfRange, ErrorType.Validation);
         }
 
         var order = TaskOrderingHelper.GetOrderForTargetIndex(targetColumnTasks, request.TargetIndex);
@@ -74,7 +74,7 @@ public class MoveTaskCommandHandler : IRequestHandler<MoveTaskCommand, Result<Ta
         catch (ConcurrencyConflictException)
         {
             _logger.LogWarning("Conflicto de concurrencia al mover la tarea {TaskId}: otra sesion la modifico primero", request.Id);
-            return Result<TaskResponseDto>.Failure(ConcurrencyConflict);
+            return Result<TaskResponseDto>.Failure(ConcurrencyConflict, ErrorType.Conflict);
         }
 
         var dto = task.ToDto();

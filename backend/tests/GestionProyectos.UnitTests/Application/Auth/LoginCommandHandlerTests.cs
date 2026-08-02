@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Auth;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -59,6 +60,7 @@ public class LoginCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal("Correo o contraseña incorrectos.", result.Error);
+        Assert.Equal(ErrorType.Unauthorized, result.ErrorType);
     }
 
     // Seguridad (enumeracion de usuarios, ver el comentario en LoginCommandHandler): el
@@ -75,6 +77,7 @@ public class LoginCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal("Correo o contraseña incorrectos.", result.Error);
+        Assert.Equal(ErrorType.Unauthorized, result.ErrorType);
         _jwtTokenGenerator.DidNotReceive().Generate(Arg.Any<User>());
     }
 }

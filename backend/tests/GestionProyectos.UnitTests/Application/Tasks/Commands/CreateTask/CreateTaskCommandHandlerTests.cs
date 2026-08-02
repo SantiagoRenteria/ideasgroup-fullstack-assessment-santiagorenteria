@@ -1,6 +1,7 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.CreateTask;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -69,6 +70,7 @@ public class CreateTaskCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CreateTaskCommandHandler.ColumnNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
         await _taskRepository.DidNotReceive().AddAsync(Arg.Any<TaskEntity>(), Arg.Any<CancellationToken>());
     }
 

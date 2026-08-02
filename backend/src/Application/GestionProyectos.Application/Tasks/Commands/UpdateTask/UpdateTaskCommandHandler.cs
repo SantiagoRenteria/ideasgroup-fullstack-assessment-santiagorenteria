@@ -38,7 +38,7 @@ public class UpdateTaskCommandHandler : IRequestHandler<UpdateTaskCommand, Resul
         if (task is null)
         {
             _logger.LogWarning("Intento de actualizar la tarea inexistente {TaskId}", request.Id);
-            return Result<TaskResponseDto>.Failure(TaskNotFound);
+            return Result<TaskResponseDto>.Failure(TaskNotFound, ErrorType.NotFound);
         }
 
         task.Update(request.Title, request.Description, request.Priority, request.AssigneeId);
@@ -50,7 +50,7 @@ public class UpdateTaskCommandHandler : IRequestHandler<UpdateTaskCommand, Resul
         catch (ConcurrencyConflictException)
         {
             _logger.LogWarning("Conflicto de concurrencia al actualizar la tarea {TaskId}: otra sesion la modifico primero", request.Id);
-            return Result<TaskResponseDto>.Failure(ConcurrencyConflict);
+            return Result<TaskResponseDto>.Failure(ConcurrencyConflict, ErrorType.Conflict);
         }
 
         var dto = task.ToDto();

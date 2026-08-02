@@ -2,6 +2,7 @@ using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.MoveTask;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -107,6 +108,7 @@ public class MoveTaskCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(MoveTaskCommandHandler.TaskNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
     }
 
     [Fact]
@@ -122,6 +124,7 @@ public class MoveTaskCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(MoveTaskCommandHandler.TargetColumnNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
     }
 
     [Fact]
@@ -143,6 +146,7 @@ public class MoveTaskCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(MoveTaskCommandHandler.TargetIndexOutOfRange, result.Error);
+        Assert.Equal(ErrorType.Validation, result.ErrorType);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -184,6 +188,7 @@ public class MoveTaskCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(MoveTaskCommandHandler.ConcurrencyConflict, result.Error);
+        Assert.Equal(ErrorType.Conflict, result.ErrorType);
         await _boardNotifier.DidNotReceive().TaskMovedAsync(Arg.Any<Guid>(), Arg.Any<TaskResponseDto>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 }

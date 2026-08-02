@@ -40,16 +40,9 @@ public static class ReportsEndpoints
 
             var result = await sender.Send(new ExportProjectReportQuery(projectId, format, assigneeFilter, priorityFilter), cancellationToken);
 
-            if (!result.IsSuccess)
-            {
-                var statusCode = result.Error == ExportProjectReportQueryHandler.ProjectNotFound
-                    ? StatusCodes.Status404NotFound
-                    : StatusCodes.Status400BadRequest;
-
-                return Results.Json(new { error = result.Error }, statusCode: statusCode);
-            }
-
-            return Results.File(result.Value!.Content, result.Value.ContentType, result.Value.FileName);
+            return result.IsSuccess
+                ? Results.File(result.Value!.Content, result.Value.ContentType, result.Value.FileName)
+                : result.ToErrorResponse();
         })
         .WithTags("Reports")
         .RequireAuthorization();

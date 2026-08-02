@@ -37,13 +37,13 @@ public class DeleteProjectCommandHandler : IRequestHandler<DeleteProjectCommand,
         if (project is null)
         {
             _logger.LogWarning("Intento de eliminar el proyecto inexistente {ProjectId}", request.Id);
-            return Result.Failure(ProjectNotFound);
+            return Result.Failure(ProjectNotFound, ErrorType.NotFound);
         }
 
         if (await _columnRepository.ProjectHasTasksAsync(project.Id, cancellationToken))
         {
             _logger.LogWarning("Intento de eliminar el proyecto {ProjectId} que contiene tareas", project.Id);
-            return Result.Failure(ProjectHasTasks);
+            return Result.Failure(ProjectHasTasks, ErrorType.Conflict);
         }
 
         // Soft delete en cascada logica, en transaccion explicita (dos escrituras que

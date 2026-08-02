@@ -32,13 +32,13 @@ public class UpdateProjectCommandHandler : IRequestHandler<UpdateProjectCommand,
         if (project is null)
         {
             _logger.LogWarning("Intento de actualizar el proyecto inexistente {ProjectId}", request.Id);
-            return Result<ProjectResponseDto>.Failure(ProjectNotFound);
+            return Result<ProjectResponseDto>.Failure(ProjectNotFound, ErrorType.NotFound);
         }
 
         if (await _projectRepository.ExistsByNameAsync(request.Name, excludeProjectId: project.Id, cancellationToken))
         {
             _logger.LogWarning("Intento de renombrar el proyecto {ProjectId} a un nombre duplicado {Name}", project.Id, request.Name);
-            return Result<ProjectResponseDto>.Failure(DuplicateName);
+            return Result<ProjectResponseDto>.Failure(DuplicateName, ErrorType.Conflict);
         }
 
         project.Update(request.Name, request.Description, request.StartDate, request.EndDate, request.Status);

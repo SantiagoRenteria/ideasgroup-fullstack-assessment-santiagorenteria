@@ -30,7 +30,7 @@ public class CreateProjectCommandHandler : IRequestHandler<CreateProjectCommand,
         if (await _projectRepository.ExistsByNameAsync(request.Name, excludeProjectId: null, cancellationToken))
         {
             _logger.LogWarning("Intento de crear un proyecto con nombre duplicado {Name}", request.Name);
-            return Result<ProjectResponseDto>.Failure(DuplicateName);
+            return Result<ProjectResponseDto>.Failure(DuplicateName, ErrorType.Conflict);
         }
 
         var project = new Project(

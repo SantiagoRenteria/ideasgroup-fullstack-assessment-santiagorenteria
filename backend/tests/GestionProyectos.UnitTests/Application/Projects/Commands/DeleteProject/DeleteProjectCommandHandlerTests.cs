@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Projects.Commands.DeleteProject;
+using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -61,6 +62,7 @@ public class DeleteProjectCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(DeleteProjectCommandHandler.ProjectHasTasks, result.Error);
+        Assert.Equal(ErrorType.Conflict, result.ErrorType);
         Assert.False(project.IsDeleted);
         await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
         await _columnRepository.DidNotReceive().SoftDeleteByProjectAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
@@ -77,6 +79,7 @@ public class DeleteProjectCommandHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(DeleteProjectCommandHandler.ProjectNotFound, result.Error);
+        Assert.Equal(ErrorType.NotFound, result.ErrorType);
         await _columnRepository.DidNotReceive().ProjectHasTasksAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 }

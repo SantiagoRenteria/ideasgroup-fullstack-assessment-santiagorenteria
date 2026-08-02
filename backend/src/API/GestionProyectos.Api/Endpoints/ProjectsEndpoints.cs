@@ -23,15 +23,9 @@ public static class ProjectsEndpoints
                 new CreateProjectCommand(request.Name, request.Description, request.StartDate, request.EndDate, request.Status),
                 cancellationToken);
 
-            if (result.IsSuccess)
-                return Results.Created($"/api/projects/{result.Value!.Id}", result.Value);
-
-            // Nombre duplicado es un conflicto de estado (409), no un error de formato (400).
-            var statusCode = result.Error == CreateProjectCommandHandler.DuplicateName
-                ? StatusCodes.Status409Conflict
-                : StatusCodes.Status400BadRequest;
-
-            return Results.Json(new { error = result.Error }, statusCode: statusCode);
+            return result.IsSuccess
+                ? Results.Created($"/api/projects/{result.Value!.Id}", result.Value)
+                : result.ToErrorResponse();
         });
 
         group.MapGet("/", async (
@@ -66,7 +60,7 @@ public static class ProjectsEndpoints
 
             return result.IsSuccess
                 ? Results.Ok(result.Value)
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+                : result.ToErrorResponse();
         });
 
         group.MapPut("/{id:guid}", async (Guid id, UpdateProjectRequest request, ISender sender, CancellationToken cancellationToken) =>
@@ -75,32 +69,18 @@ public static class ProjectsEndpoints
                 new UpdateProjectCommand(id, request.Name, request.Description, request.StartDate, request.EndDate, request.Status),
                 cancellationToken);
 
-            if (result.IsSuccess)
-                return Results.Ok(result.Value);
-
-            var statusCode = result.Error switch
-            {
-                UpdateProjectCommandHandler.DuplicateName => StatusCodes.Status409Conflict,
-                _ => StatusCodes.Status404NotFound
-            };
-
-            return Results.Json(new { error = result.Error }, statusCode: statusCode);
+            return result.IsSuccess
+                ? Results.Ok(result.Value)
+                : result.ToErrorResponse();
         });
 
         group.MapDelete("/{id:guid}", async (Guid id, ISender sender, CancellationToken cancellationToken) =>
         {
             var result = await sender.Send(new DeleteProjectCommand(id), cancellationToken);
 
-            if (result.IsSuccess)
-                return Results.NoContent();
-
-            // "Tiene tareas" es un conflicto de estado (409), distinto de "no encontrado"
-            // (404) -- mismo patron que DELETE /api/columns/{id}.
-            var statusCode = result.Error == DeleteProjectCommandHandler.ProjectHasTasks
-                ? StatusCodes.Status409Conflict
-                : StatusCodes.Status404NotFound;
-
-            return Results.Json(new { error = result.Error }, statusCode: statusCode);
+            return result.IsSuccess
+                ? Results.NoContent()
+                : result.ToErrorResponse();
         });
     }
 }
