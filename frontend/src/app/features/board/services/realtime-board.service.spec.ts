@@ -12,10 +12,8 @@ describe('RealtimeBoardService', () => {
         service = TestBed.inject(RealtimeBoardService);
     });
 
-    // No se prueba el protocolo SignalR en si (biblioteca de terceros, ya probada por
-    // Microsoft) sino la capa propia: sin conexion abierta, el servicio debe comportarse
-    // de forma segura en vez de lanzar excepciones -- BoardComponent.ngOnDestroy depende
-    // de esto cuando el usuario navega antes de que la conexion llegue a establecerse.
+    // No prueba el protocolo SignalR (ya probado por Microsoft), sino que la capa propia
+    // no lance excepciones sin conexion -- BoardComponent.ngOnDestroy depende de esto.
     it('connectionId es null antes de conectar', () => {
         expect(service.connectionId).toBeNull();
     });

@@ -3,10 +3,8 @@ using GestionProyectos.Domain.Entities;
 
 namespace GestionProyectos.Application.Tasks;
 
-// Punto unico donde CreateTaskCommandHandler y MoveTaskCommandHandler calculan el Order
-// (LexoRank) de una tarea al insertarla o moverla. Centraliza tambien la reaccion al
-// rebalanceo (ver docs/decisions/arquitectura-decisiones.md §4 y §14): si el hueco entre
-// dos claves se agoto, se regeneran las claves de toda la columna antes de reintentar.
+// Punto unico donde Create/MoveTaskCommandHandler calculan el Order (LexoRank) y
+// reaccionan al rebalanceo (ADR §4/§14) si el hueco entre claves se agoto.
 internal static class TaskOrderingHelper
 {
     // `tasksInColumn` debe venir ordenado por Order y sin incluir la tarea que se esta
@@ -27,11 +25,8 @@ internal static class TaskOrderingHelper
         }
     }
 
-    // Reescribe el Order de cada tarea existente en la columna con claves cortas y
-    // parejamente espaciadas (mismo algoritmo de punto medio, aplicado por biseccion),
-    // y recalcula el punto de insercion sobre esas claves nuevas. EF Core detecta estos
-    // cambios por change tracking -- las entidades de `tasksInColumn` deben venir
-    // trackeadas (ver ITaskRepository.ListByColumnAsync).
+    // Reescribe el Order de toda la columna con el mismo algoritmo de biseccion; las
+    // entidades deben venir trackeadas por EF (ver ITaskRepository.ListByColumnAsync).
     private static string RebalanceAndRetry(IReadOnlyList<TaskEntity> tasksInColumn, int targetIndex)
     {
         var rebalanced = LexoRankService.GenerateSequence(tasksInColumn.Count);

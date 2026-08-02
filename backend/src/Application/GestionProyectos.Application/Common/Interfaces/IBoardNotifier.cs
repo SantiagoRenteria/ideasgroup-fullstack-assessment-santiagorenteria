@@ -2,11 +2,8 @@ using GestionProyectos.Application.Tasks;
 
 namespace GestionProyectos.Application.Common.Interfaces;
 
-// Puerto de tiempo real (seccion 6.7): los Handlers de Tasks dependen solo de esta
-// interfaz, nunca de SignalR directamente -- ver docs/decisions/arquitectura-decisiones.md
-// §15.1. excludeConnectionId es la conexion del propio emisor (si tiene el canal abierto)
-// para no reenviarle su propio cambio (§15.3): ya lo aplico de forma optimista con la
-// respuesta HTTP.
+// Puerto de tiempo real (sección 6.7, ADR §15.1): los Handlers nunca dependen de SignalR
+// directo. excludeConnectionId evita reenviarle al emisor su propio cambio (§15.3).
 public interface IBoardNotifier
 {
     Task TaskCreatedAsync(Guid projectId, TaskResponseDto task, string? excludeConnectionId, CancellationToken cancellationToken);

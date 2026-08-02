@@ -67,10 +67,8 @@ try
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
 
-    // Rate limiting en login (docs/METODOLOGIA.md §9.3): ventana fija de 5 intentos por
-    // minuto, particionada por IP -- sin particionar, un cliente agotaria el limite global
-    // y bloquearia el login de todos los demas. Vive aca (API, no Infrastructure) porque
-    // Microsoft.AspNetCore.RateLimiting solo viene con el shared framework de Sdk.Web.
+    // Rate limiting de login (METODOLOGIA §9.3): 5/min por IP, particionado para no
+    // bloquear a todos los usuarios con un solo cliente agotando el limite global.
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -132,17 +130,13 @@ try
     app.UseRateLimiter();
     app.UseAuthentication();
 
-    // Enriquece todo log emitido durante el resto del request (aplicacion, EF, el propio
-    // request-logging) con el UserId del JWT ya validado -- para que ADR §6 sea verídico
-    // (issue #37). Corre despues de UseAuthentication (que puebla HttpContext.User) y antes
-    // de UseAuthorization a proposito: asi los intentos rechazados por autorizacion tambien
-    // quedan asociados a un usuario en los logs, no solo los que pasan.
+    // Enriquece los logs del resto del request con el UserId (issue #37, ADR §6); corre
+    // entre UseAuthentication y UseAuthorization para que los 403 tambien queden asociados
+    // a un usuario, no solo lo que pasan la autorizacion.
     app.Use(async (context, next) =>
     {
         // ClaimTypes.NameIdentifier, no JwtRegisteredClaimNames.Sub: ASP.NET Core remapea
-        // "sub" a ese URI largo por defecto (JwtSecurityTokenHandler.DefaultInboundClaimTypeMap),
-        // verificado volcando los claims reales en runtime -- "jti"/"name"/"exp" no se
-        // remapean (por eso el resto del proyecto los busca por su nombre corto sin problema).
+        // "sub" por defecto (JwtSecurityTokenHandler.DefaultInboundClaimTypeMap).
         var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
         using (LogContext.PushProperty("UserId", userId))

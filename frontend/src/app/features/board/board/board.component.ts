@@ -91,10 +91,8 @@ export class BoardComponent implements OnInit, OnDestroy {
         );
     }
 
-    // Los tres siguientes replican, para cambios que llegan de otra sesion, la misma
-    // mutacion de arrays que ya aplica esta sesion de forma optimista (onDrop/deleteTask) --
-    // ver ADR §15.5. El emisor original no recibe su propio evento (ADR §15.3), asi que no
-    // hace falta distinguir "propio" de "ajeno" aqui.
+    // Replican la misma mutacion optimista que onDrop/deleteTask (ADR §15.5); el emisor
+    // no recibe su propio evento (ADR §15.3), no hace falta distinguir propio/ajeno.
     private applyRemoteTaskCreated(task: BoardTask): void {
         const column = this.board?.columns.find((c) => c.id === task.columnId);
         if (!column || column.tasks.some((t) => t.id === task.id)) {
@@ -145,11 +143,8 @@ export class BoardComponent implements OnInit, OnDestroy {
         });
     }
 
-    // Deseable seccion 7: filtro por responsable/prioridad, client-side -- el tablero ya
-    // trae todas las tareas cargadas de una vez, filtrar aca evita un round-trip por cada
-    // cambio de combo. Ninguno de los dos metodos siguientes muta board.columns[].tasks:
-    // el estado real del tablero queda intacto para que el codigo de tiempo real (que si
-    // mutasos arrays) siga funcionando sin cambios.
+    // Filtro client-side (deseable sección 7): no muta board.columns[].tasks, para no
+    // romper el tiempo real que sí muta esos arrays.
     get isFiltering(): boolean {
         return this.filterAssigneeId !== null || this.filterPriority !== null || this.searchText.trim().length > 0;
     }
@@ -171,10 +166,8 @@ export class BoardComponent implements OnInit, OnDestroy {
         this.searchText = '';
     }
 
-    // Descarga funcional desde la interfaz (seccion 6.8, issue #19): dispara el guardado
-    // del archivo via un <a download> efimero, en vez de navegar a la URL del endpoint --
-    // asi el request sigue llevando el header Authorization (el JWT no viaja en la URL).
-    // Manda el mismo filtro que esta activo en el tablero (deseable seccion 7).
+    // <a download> efimero en vez de navegar a la URL (issue #19): asi el request lleva
+    // el header Authorization, el JWT no viaja en la URL. Manda el filtro activo del tablero.
     downloadReport(format: ReportFormat): void {
         this.downloadingReport = format;
         const filters = { assigneeId: this.filterAssigneeId, priority: this.filterPriority };
@@ -207,10 +200,7 @@ export class BoardComponent implements OnInit, OnDestroy {
         return task.id;
     }
 
-    // Traslado entre columnas y reordenamiento dentro de una misma columna (seccion 6.6):
-    // se aplica el cambio en el array local antes de la respuesta del servidor
-    // (actualizacion optimista) y, si el servidor responde con error, se restaura la
-    // instantanea previa al arrastre -- reversion visible exigida por el enunciado.
+    // Actualizacion optimista con reversion visible si el servidor falla (sección 6.6).
     onDrop(event: CdkDragDrop<BoardTask[]>, targetColumn: BoardColumn): void {
         if (!this.board) {
             return;

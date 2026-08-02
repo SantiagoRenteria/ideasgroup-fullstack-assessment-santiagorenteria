@@ -6,11 +6,8 @@ namespace GestionProyectos.Infrastructure.Persistence.Configurations;
 
 public class UserConfiguration : IEntityTypeConfiguration<User>
 {
-    // Hash BCrypt de "IdeasGroup2026!" pre-pimentado (HMACSHA256) con el pepper por defecto
-    // de .env.example (PASSWORD_PEPPER). Si cambias PASSWORD_PEPPER en un entorno donde ya
-    // corriste esta migracion, estos 2 usuarios semilla dejan de poder loguearse: hay que
-    // regenerar el hash (ver docs/decisions/arquitectura-decisiones.md) y crear una nueva
-    // migracion. Documentado tambien en el README.
+    // Hash BCrypt de "IdeasGroup2026!" pre-pimentado con el pepper de .env.example; si
+    // cambias PASSWORD_PEPPER hay que regenerar el hash y crear una migracion nueva.
     private const string SeedPasswordHash = "$2a$11$YJ0PQ4j9uGPeu.c0KarD3.nWP8.o7KjhuJ8P/W6JxT4vXAKvumGhu";
 
     public void Configure(EntityTypeBuilder<User> builder)

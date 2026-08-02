@@ -1,9 +1,7 @@
 namespace GestionProyectos.Infrastructure.Realtime;
 
-// Puramente infraestructura del hub -- ningun caso de uso de Application necesita saber
-// quien esta conectado a un tablero, asi que este puerto vive en Infrastructure, no en
-// Application/Common/Interfaces (a diferencia de IBoardNotifier, que si cruza esa
-// frontera porque los CommandHandlers de tareas lo usan).
+// Vive en Infrastructure, no en Application/Common/Interfaces: a diferencia de
+// IBoardNotifier, ningun CommandHandler necesita saber quien esta conectado.
 public interface IBoardPresenceTracker
 {
     // Devuelve la lista de nombres conectados al tablero DESPUES de aplicar el cambio,

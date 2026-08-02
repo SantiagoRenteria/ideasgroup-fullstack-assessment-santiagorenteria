@@ -42,10 +42,9 @@ public static class ProjectsEndpoints
             string? name = null,
             string? status = null) =>
         {
-            // string? en vez de ProjectStatus? a proposito: el binding nativo de enums
-            // en query string devuelve 400 ante "status=" (presente pero vacio), que es
-            // como un cliente HTTP tipico representa "sin filtro" al limpiar un combo.
-            // Solo se rechaza un valor realmente invalido (ej. "status=Foo").
+            // string? en vez de ProjectStatus?: el binding nativo rechaza "status=" vacio
+            // con 400, cuando deberia significar "sin filtro". Solo se rechaza un valor
+            // realmente invalido.
             ProjectStatus? statusFilter = null;
 
             if (!string.IsNullOrWhiteSpace(status))

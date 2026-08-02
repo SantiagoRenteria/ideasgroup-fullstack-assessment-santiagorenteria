@@ -19,10 +19,8 @@ public class BoardHub : Hub
 
     public static string GroupName(Guid projectId) => $"board-{projectId}";
 
-    // Deseable seccion 7: indicador de usuarios conectados. A diferencia de TaskCreated/
-    // Updated/Deleted/Moved (que excluyen al emisor, ver SignalRBoardNotifier), aca el
-    // propio usuario que se une SI debe verse a si mismo en la lista -- "quien esta aca,
-    // incluyendome" es el comportamiento esperado.
+    // A diferencia de los eventos Task* (que excluyen al emisor), aca el usuario que se
+    // une SI debe verse a si mismo en la lista de conectados.
     public async Task JoinBoard(Guid projectId)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(projectId));

@@ -4,10 +4,8 @@ using MediatR;
 
 namespace GestionProyectos.Application.Reports.Queries.ExportProjectReport;
 
-// Handler = unico orquestador (ver docs/decisions/arquitectura-decisiones.md §5): pide el
-// DTO por la unica consulta EF (IProjectReportRepository), resuelve el exportador por
-// formato via IEnumerable<IReportExporter> (nunca if/switch) y estampa la fecha de
-// generacion -- no es dato persistido, no le corresponde al repositorio.
+// Handler = unico orquestador (ADR §5): arma el DTO, resuelve el exportador via
+// IEnumerable<IReportExporter> (nunca if/switch) y estampa la fecha de generacion.
 public class ExportProjectReportQueryHandler : IRequestHandler<ExportProjectReportQuery, Result<ExportedReportDto>>
 {
     public const string ProjectNotFound = "Proyecto no encontrado.";

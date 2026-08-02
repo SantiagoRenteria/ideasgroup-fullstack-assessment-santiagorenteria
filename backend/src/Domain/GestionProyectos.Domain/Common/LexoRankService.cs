@@ -1,20 +1,14 @@
 namespace GestionProyectos.Domain.Common;
 
-// LexoRank simplificado (docs/decisions/arquitectura-decisiones.md §4): genera claves
-// ordenables lexicograficamente entre dos posiciones existentes, sin reescribir el resto
-// de la columna en cada movimiento. Alfabeto base62 ascendente segun el orden ASCII real
-// de sus caracteres (0-9 < A-Z < a-z), asi que la comparacion de strings comun ya respeta
-// el orden del alfabeto sin tabla de traduccion aparte.
+// LexoRank simplificado (ADR §4): genera claves ordenables entre dos posiciones sin
+// reescribir el resto de la columna. Alfabeto base62 ya en orden ASCII (0-9 < A-Z < a-z).
 public static class LexoRankService
 {
     private const string Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private const int Base = 62;
 
-    // Umbral que fuerza un rebalanceo de la columna en vez de dejar crecer la clave sin
-    // limite. Insertar siempre en el mismo extremo agota el hueco disponible y hace que
-    // cada insercion sucesiva necesite un caracter mas -- este limite corta ese
-    // crecimiento antes de que las claves se vuelvan indices imposibles de leer o de
-    // indexar eficientemente en Postgres.
+    // Fuerza un rebalanceo en vez de dejar crecer la clave sin limite: insertar siempre
+    // en el mismo extremo agota el hueco disponible caracter a caracter.
     private const int MaxKeyLength = 8;
 
     public static string GetKeyBetween(string? prev, string? next)
@@ -30,10 +24,8 @@ public static class LexoRankService
         return key;
     }
 
-    // Genera `count` claves cortas y estrictamente ascendentes, reutilizando el mismo
-    // algoritmo de punto medio de forma recursiva (biseccion) en vez de una formula de
-    // reparto aparte -- un solo algoritmo cubre tanto la insercion normal como el
-    // rebalanceo completo de una columna.
+    // Reutiliza el mismo algoritmo de punto medio por biseccion para generar `count`
+    // claves: cubre tanto la insercion normal como el rebalanceo de una columna.
     public static IReadOnlyList<string> GenerateSequence(int count)
     {
         if (count <= 0)
@@ -57,11 +49,8 @@ public static class LexoRankService
         Fill(keys, mid + 1, hi, key, upperBound);
     }
 
-    // Construye caracter por caracter el punto medio entre `prev` y `next`. En cada
-    // posicion, si hay hueco (diferencia de indices > 1) se resuelve con un unico
-    // caracter intermedio; si las claves son adyacentes en esa posicion, se conserva el
-    // digito de `prev` (o el minimo si `prev` ya se agoto) y se profundiza una posicion
-    // mas -- ahi es donde la clave crece de largo.
+    // Punto medio caracter a caracter: si hay hueco se resuelve con un digito intermedio;
+    // si son adyacentes, conserva el digito de `prev` y profundiza una posicion mas.
     private static string Build(string? prev, string? next)
     {
         var result = new System.Text.StringBuilder();

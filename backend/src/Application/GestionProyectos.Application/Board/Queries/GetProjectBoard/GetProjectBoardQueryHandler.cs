@@ -5,10 +5,8 @@ using MediatR;
 
 namespace GestionProyectos.Application.Board.Queries.GetProjectBoard;
 
-// Endpoint agregado (ver docs/decisions/arquitectura-decisiones.md §14.4): una sola
-// consulta por repositorio en vez de que el frontend arme el tablero con N llamadas,
-// una por columna. Las tareas se traen todas de una vez y se agrupan en memoria por
-// columna -- evita repetir el filtro ColumnId en una consulta por columna.
+// Endpoint agregado (ADR §14.4): una sola consulta en vez de que el frontend arme el
+// tablero con N llamadas, una por columna.
 public class GetProjectBoardQueryHandler : IRequestHandler<GetProjectBoardQuery, Result<BoardResponseDto>>
 {
     public const string ProjectNotFound = "Proyecto no encontrado.";

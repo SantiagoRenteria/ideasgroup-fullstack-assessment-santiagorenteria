@@ -30,10 +30,8 @@ export class AuthService {
         );
     }
 
-    // Revocacion real en servidor (no solo limpieza en el cliente): ver
-    // docs/decisions/arquitectura-decisiones.md §16. El estado local se limpia y se
-    // redirige al login tanto si la llamada tiene exito como si falla -- un logout no debe
-    // dejar al usuario atrapado por un problema de red.
+    // Revocacion real en servidor (ADR §16); limpia el estado y redirige aunque la
+    // llamada falle -- un logout no debe dejar al usuario atrapado por un error de red.
     logout(): void {
         const hadToken = this.getToken() !== null;
         const finish = () => {

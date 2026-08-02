@@ -16,10 +16,8 @@ public static class ReportsEndpoints
             string? assigneeId = null,
             string? priority = null) =>
         {
-            // string? en vez de Guid?/TaskPriority? a proposito, mismo motivo que
-            // ProjectsEndpoints.status: el binding nativo devuelve 400 ante un query param
-            // presente pero vacio (como limpiar un combo en el frontend), y eso deberia
-            // significar "sin filtro", no un error de formato.
+            // string? en vez de tipos fuertes (mismo motivo que ProjectsEndpoints.status):
+            // un query param vacio debe significar "sin filtro", no un 400 de binding.
             Guid? assigneeFilter = null;
 
             if (!string.IsNullOrWhiteSpace(assigneeId))

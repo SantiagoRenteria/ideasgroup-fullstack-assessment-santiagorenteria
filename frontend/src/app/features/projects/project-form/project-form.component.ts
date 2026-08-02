@@ -74,13 +74,9 @@ export class ProjectFormComponent implements OnChanges {
         return this.project !== null;
     }
 
-    // Propiedad estable (no un getter): [minDate] en p-calendar espera la MISMA
-    // referencia de Date entre ciclos de deteccion de cambios. Un getter que hace
-    // "new Date()" en cada llamada le devuelve un objeto distinto en cada tick de
-    // Angular, y PrimeNG reacciona a eso reprocesando el calendario en cada ciclo --
-    // el sintoma visible es que el picker no deja completar la seleccion de una fecha.
-    // Sin restriccion en modo edicion: un proyecto ya iniciado conserva su fecha de
-    // inicio real, aunque ya haya pasado.
+    // Propiedad estable, no un getter: [minDate] en p-calendar exige la MISMA referencia
+    // de Date entre ciclos, o PrimeNG reprocesa el calendario y el picker no deja
+    // seleccionar fecha. Sin restriccion en modo edicion.
     minStartDate: Date | null = null;
 
     ngOnChanges(changes: SimpleChanges): void {
