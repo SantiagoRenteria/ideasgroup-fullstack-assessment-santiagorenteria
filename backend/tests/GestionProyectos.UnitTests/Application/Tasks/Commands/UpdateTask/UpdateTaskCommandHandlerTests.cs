@@ -4,6 +4,7 @@ using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.UpdateTask;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -20,7 +21,7 @@ public class UpdateTaskCommandHandlerTests
         Guid.NewGuid(), Guid.NewGuid(), "Titulo", "Descripcion", TaskPriority.Low, null, "m", DateTime.UtcNow);
 
     private UpdateTaskCommandHandler CreateHandler() =>
-        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier);
+        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier, NullLogger<UpdateTaskCommandHandler>.Instance);
 
     [Fact]
     public async Task Handle_TareaExiste_ActualizaCamposYPersisteCambios()

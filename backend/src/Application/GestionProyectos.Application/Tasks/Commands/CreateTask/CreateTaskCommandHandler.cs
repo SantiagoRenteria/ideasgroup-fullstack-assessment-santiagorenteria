@@ -2,6 +2,7 @@ using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace GestionProyectos.Application.Tasks.Commands.CreateTask;
 
@@ -13,17 +14,20 @@ public class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Resul
     private readonly ITaskRepository _taskRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBoardNotifier _boardNotifier;
+    private readonly ILogger<CreateTaskCommandHandler> _logger;
 
     public CreateTaskCommandHandler(
         IColumnRepository columnRepository,
         ITaskRepository taskRepository,
         IUnitOfWork unitOfWork,
-        IBoardNotifier boardNotifier)
+        IBoardNotifier boardNotifier,
+        ILogger<CreateTaskCommandHandler> logger)
     {
         _columnRepository = columnRepository;
         _taskRepository = taskRepository;
         _unitOfWork = unitOfWork;
         _boardNotifier = boardNotifier;
+        _logger = logger;
     }
 
     public async Task<Result<TaskResponseDto>> Handle(CreateTaskCommand request, CancellationToken cancellationToken)
@@ -31,7 +35,10 @@ public class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Resul
         var column = await _columnRepository.GetByIdAsync(request.ColumnId, cancellationToken);
 
         if (column is null)
+        {
+            _logger.LogWarning("Intento de crear una tarea en la columna inexistente {ColumnId}", request.ColumnId);
             return Result<TaskResponseDto>.Failure(ColumnNotFound);
+        }
 
         // Alta desde el tablero (seccion 6.5): siempre se agrega al final de la columna,
         // no hay forma de elegir posicion en el propio formulario de creacion.

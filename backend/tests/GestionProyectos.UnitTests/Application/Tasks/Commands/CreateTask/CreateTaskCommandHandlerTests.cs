@@ -3,6 +3,7 @@ using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.CreateTask;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -18,7 +19,7 @@ public class CreateTaskCommandHandlerTests
     private static Column CreateColumn() => new(Guid.NewGuid(), Guid.NewGuid(), "Por hacer", 0);
 
     private CreateTaskCommandHandler CreateHandler() =>
-        new(_columnRepository, _taskRepository, _unitOfWork, _boardNotifier);
+        new(_columnRepository, _taskRepository, _unitOfWork, _boardNotifier, NullLogger<CreateTaskCommandHandler>.Instance);
 
     [Fact]
     public async Task Handle_ColumnaVacia_CreaTareaConClaveInicial()

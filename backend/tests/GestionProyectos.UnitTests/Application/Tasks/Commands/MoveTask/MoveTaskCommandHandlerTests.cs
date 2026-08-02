@@ -4,6 +4,7 @@ using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.MoveTask;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -20,7 +21,7 @@ public class MoveTaskCommandHandlerTests
         Guid.NewGuid(), columnId, "Titulo", "Descripcion", TaskPriority.Low, null, order, DateTime.UtcNow);
 
     private MoveTaskCommandHandler CreateHandler() =>
-        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier);
+        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier, NullLogger<MoveTaskCommandHandler>.Instance);
 
     [Fact]
     public async Task Handle_ReordenaDentroDeLaMismaColumna_QuedaEntreLosDosVecinos()

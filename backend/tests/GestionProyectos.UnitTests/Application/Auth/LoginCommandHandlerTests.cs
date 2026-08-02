@@ -1,6 +1,7 @@
 using GestionProyectos.Application.Auth;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Entities;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -12,7 +13,8 @@ public class LoginCommandHandlerTests
     private readonly IPasswordHasher _passwordHasher = Substitute.For<IPasswordHasher>();
     private readonly IJwtTokenGenerator _jwtTokenGenerator = Substitute.For<IJwtTokenGenerator>();
 
-    private LoginCommandHandler CreateHandler() => new(_userRepository, _passwordHasher, _jwtTokenGenerator);
+    private LoginCommandHandler CreateHandler() =>
+        new(_userRepository, _passwordHasher, _jwtTokenGenerator, NullLogger<LoginCommandHandler>.Instance);
 
     private static User BuildUser(string email = "admin@ideasgroup.test") =>
         new(Guid.NewGuid(), "Administrador", email, "hash-almacenado");
