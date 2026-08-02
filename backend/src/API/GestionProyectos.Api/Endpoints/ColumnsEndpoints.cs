@@ -21,7 +21,7 @@ public static class ColumnsEndpoints
 
             return result.IsSuccess
                 ? Results.Created($"/api/columns/{result.Value!.Id}", result.Value)
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+                : result.ToErrorResponse();
         });
 
         projectColumns.MapGet("/", async (Guid projectId, ISender sender, CancellationToken cancellationToken) =>
@@ -30,7 +30,7 @@ public static class ColumnsEndpoints
 
             return result.IsSuccess
                 ? Results.Ok(result.Value)
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+                : result.ToErrorResponse();
         });
 
         var columns = app.MapGroup("/api/columns").WithTags("Columns").RequireAuthorization();
@@ -41,24 +41,16 @@ public static class ColumnsEndpoints
 
             return result.IsSuccess
                 ? Results.Ok(result.Value)
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+                : result.ToErrorResponse();
         });
 
         columns.MapDelete("/{id:guid}", async (Guid id, ISender sender, CancellationToken cancellationToken) =>
         {
             var result = await sender.Send(new DeleteColumnCommand(id), cancellationToken);
 
-            if (result.IsSuccess)
-                return Results.NoContent();
-
-            // La regla de negocio "no borrar columna con tareas" (seccion 6.4) es un
-            // conflicto de estado (409), distinto de "no encontrada" (404). Ver
-            // DeleteColumnCommandHandler y docs/decisions/arquitectura-decisiones.md §3.
-            var statusCode = result.Error == DeleteColumnCommandHandler.ColumnHasTasks
-                ? StatusCodes.Status409Conflict
-                : StatusCodes.Status404NotFound;
-
-            return Results.Json(new { error = result.Error }, statusCode: statusCode);
+            return result.IsSuccess
+                ? Results.NoContent()
+                : result.ToErrorResponse();
         });
     }
 }

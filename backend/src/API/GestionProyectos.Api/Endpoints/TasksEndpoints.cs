@@ -33,7 +33,7 @@ public static class TasksEndpoints
 
             return result.IsSuccess
                 ? Results.Created($"/api/tasks/{result.Value!.Id}", result.Value)
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status404NotFound);
+                : result.ToErrorResponse();
         });
 
         group.MapPut("/{id:guid}", async (Guid id, UpdateTaskRequest request, ISender sender, HttpContext httpContext, CancellationToken cancellationToken) =>
@@ -42,16 +42,9 @@ public static class TasksEndpoints
                 new UpdateTaskCommand(id, request.Title, request.Description, request.Priority, request.AssigneeId, GetConnectionId(httpContext)),
                 cancellationToken);
 
-            if (result.IsSuccess)
-                return Results.Ok(result.Value);
-
-            // Conflicto de concurrencia (xmin, ADR §15.2) es 409: la tarea existe pero
-            // otra sesion la modifico primero, distinto de "no encontrado" (404).
-            var statusCode = result.Error == UpdateTaskCommandHandler.ConcurrencyConflict
-                ? StatusCodes.Status409Conflict
-                : StatusCodes.Status404NotFound;
-
-            return Results.Json(new { error = result.Error }, statusCode: statusCode);
+            return result.IsSuccess
+                ? Results.Ok(result.Value)
+                : result.ToErrorResponse();
         });
 
         // PATCH, no PUT: traslado por drag&drop (seccion 6.6), distinto de la edicion de
@@ -62,32 +55,18 @@ public static class TasksEndpoints
                 new MoveTaskCommand(id, request.TargetColumnId, request.TargetIndex, GetConnectionId(httpContext)),
                 cancellationToken);
 
-            if (result.IsSuccess)
-                return Results.Ok(result.Value);
-
-            // 400 = indice invalido, 409 = conflicto de concurrencia (ADR §15.2), 404 = el resto.
-            var statusCode = result.Error switch
-            {
-                MoveTaskCommandHandler.TargetIndexOutOfRange => StatusCodes.Status400BadRequest,
-                MoveTaskCommandHandler.ConcurrencyConflict => StatusCodes.Status409Conflict,
-                _ => StatusCodes.Status404NotFound
-            };
-
-            return Results.Json(new { error = result.Error }, statusCode: statusCode);
+            return result.IsSuccess
+                ? Results.Ok(result.Value)
+                : result.ToErrorResponse();
         });
 
         group.MapDelete("/{id:guid}", async (Guid id, ISender sender, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
             var result = await sender.Send(new DeleteTaskCommand(id, GetConnectionId(httpContext)), cancellationToken);
 
-            if (result.IsSuccess)
-                return Results.NoContent();
-
-            var statusCode = result.Error == DeleteTaskCommandHandler.ConcurrencyConflict
-                ? StatusCodes.Status409Conflict
-                : StatusCodes.Status404NotFound;
-
-            return Results.Json(new { error = result.Error }, statusCode: statusCode);
+            return result.IsSuccess
+                ? Results.NoContent()
+                : result.ToErrorResponse();
         });
     }
 }

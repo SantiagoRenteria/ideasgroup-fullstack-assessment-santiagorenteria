@@ -20,7 +20,7 @@ public static class AuthEndpoints
 
             return result.IsSuccess
                 ? Results.Ok(result.Value)
-                : Results.Json(new { error = result.Error }, statusCode: StatusCodes.Status401Unauthorized);
+                : result.ToErrorResponse();
         }).RequireRateLimiting("login");
 
         // Revocacion real del JWT (ADR §16), no solo limpieza en el cliente: el jti y el
