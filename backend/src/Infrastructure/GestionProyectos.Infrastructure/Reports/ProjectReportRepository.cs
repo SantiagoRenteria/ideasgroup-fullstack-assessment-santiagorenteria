@@ -15,19 +15,8 @@ public class ProjectReportRepository : IProjectReportRepository
         _dbContext = dbContext;
     }
 
-    // Una sola consulta EF (enunciado sección 6.8): LEFT JOIN encadenado Project -> Columns
-    // -> Tasks -> User, arrancando desde Projects (no desde Tasks) a propósito. Así, un
-    // proyecto sin columnas o sin tareas sigue devolviendo exactamente una fila (con los
-    // campos de tarea en null) en vez de cero filas -- necesario para distinguir "proyecto
-    // no existe" (0 filas) de "proyecto existe pero sin tareas" (>=1 fila, Tasks vacío tras
-    // filtrar). Los HasQueryFilter de soft-delete (Project/Column/TaskEntity) se aplican
-    // solos, sin repetir el filtro aquí.
-    //
-    // assigneeId/priority se aplican como Where() sobre la FUENTE del join (filteredTasks),
-    // no como filtro posterior sobre el resultado -- si fuera un WHERE sobre las columnas de
-    // tasks despues del join, Postgres degradaria el LEFT JOIN a INNER JOIN de facto (una
-    // fila cuyo lado derecho no cumple la condicion se descarta), volviendo a mezclar
-    // "proyecto sin tareas que matcheen el filtro" con "proyecto inexistente".
+    // LEFT JOIN desde Projects (sección 6.8), para distinguir proyecto inexistente de sin
+    // tareas; assigneeId/priority filtran la fuente del join, no el resultado.
     public async Task<ProjectReportDto?> GetReportAsync(
         Guid projectId,
         Guid? assigneeId,

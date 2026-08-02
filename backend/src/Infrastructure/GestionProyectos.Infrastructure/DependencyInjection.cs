@@ -32,10 +32,8 @@ public static class DependencyInjection
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<SecurityOptions>(configuration.GetSection(SecurityOptions.SectionName));
 
-        // Whitelist explicita (enunciado seccion 4, checklist de seguridad
-        // docs/METODOLOGIA.md §9.3) -- nunca AllowAnyOrigin. Sin AllowCredentials: la API
-        // usa JWT por header Bearer, no cookies, asi que no hace falta y ademas es
-        // incompatible con multiples origenes.
+        // Whitelist explicita (seccion 4, METODOLOGIA §9.3), nunca AllowAnyOrigin; sin
+        // AllowCredentials porque la API usa JWT por header, no cookies.
         var corsOptions = configuration.GetSection(CorsOptions.SectionName).Get<CorsOptions>() ?? new CorsOptions();
 
         services.AddCors(options => options.AddDefaultPolicy(policy =>
@@ -100,10 +98,8 @@ public static class DependencyInjection
                         return Task.CompletedTask;
                     },
 
-                    // Blocklist de tokens cerrados por el propio usuario (POST
-                    // /api/auth/logout) -- ver docs/decisions/arquitectura-decisiones.md
-                    // §16. Corre en cada request autenticado, incluido el hub de SignalR
-                    // (comparten esta misma configuracion de AddJwtBearer).
+                    // Blocklist de tokens cerrados por el usuario (POST /auth/logout, ADR
+                    // §16); corre en cada request autenticado, incluido el hub de SignalR.
                     OnTokenValidated = async context =>
                     {
                         var jti = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);

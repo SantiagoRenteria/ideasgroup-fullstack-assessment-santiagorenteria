@@ -65,10 +65,7 @@ public static class TasksEndpoints
             if (result.IsSuccess)
                 return Results.Ok(result.Value);
 
-            // Posicion fuera de rango (400): el estado del tablero que tenia el cliente al
-            // iniciar el arrastre ya no es valido. Conflicto de concurrencia (409, ADR
-            // §15.2): otra sesion movio/edito la misma tarea primero. Cualquier otro caso
-            // (404) dispara la reversion visible que exige 6.6 igual que los anteriores.
+            // 400 = indice invalido, 409 = conflicto de concurrencia (ADR §15.2), 404 = el resto.
             var statusCode = result.Error switch
             {
                 MoveTaskCommandHandler.TargetIndexOutOfRange => StatusCodes.Status400BadRequest,

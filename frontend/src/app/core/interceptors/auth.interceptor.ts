@@ -12,10 +12,8 @@ export class AuthInterceptor implements HttpInterceptor {
         const authReq = token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
 
         const esLogin = req.url.includes('/auth/login');
-        // Si el propio logout devuelve 401 (token ya vencido/revocado), no hay que volver
-        // a llamar a logout() -- provocaria una segunda llamada a POST /auth/logout
-        // recursiva. AuthService.logout() ya limpia el estado local sin importar la
-        // respuesta de esa llamada puntual.
+        // Si el propio logout devuelve 401, no reintentar logout() -- provocaria una
+        // llamada recursiva; el estado local ya se limpia sin importar la respuesta.
         const esLogout = req.url.includes('/auth/logout');
 
         return next.handle(authReq).pipe(

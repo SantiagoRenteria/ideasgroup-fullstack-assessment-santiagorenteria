@@ -37,10 +37,8 @@ public class DeleteProjectCommandHandler : IRequestHandler<DeleteProjectCommand,
         if (await _columnRepository.ProjectHasTasksAsync(project.Id, cancellationToken))
             return Result.Failure(ProjectHasTasks);
 
-        // Soft delete: el proyecto se marca eliminado y sus columnas (sin tareas, ya
-        // verificado arriba) se marcan en cascada logica. Envuelto en una transaccion
-        // explicita porque son dos escrituras separadas (SaveChanges + bulk update) que
-        // antes eran una sola sentencia DELETE ... CASCADE.
+        // Soft delete en cascada logica, en transaccion explicita (dos escrituras que
+        // antes eran un solo DELETE ... CASCADE).
         await _unitOfWork.ExecuteInTransactionAsync(async () =>
         {
             project.Delete();

@@ -67,24 +67,14 @@ public class TaskEntityConfiguration : IEntityTypeConfiguration<TaskEntity>
         builder.HasIndex(t => new { t.ColumnId, t.Order })
             .HasDatabaseName("ix_tasks_column_id_order");
 
-        // Concurrencia optimista con la columna de sistema xmin de Postgres (sin migracion
-        // nueva: xmin ya existe en toda tabla). El equivalente "explicito" recomendado por
-        // el warning de obsolescencia (Property<uint>("xmin").IsRowVersion()) en realidad
-        // genera una migracion invalida (intenta AddColumn "xmin", nombre reservado por
-        // Postgres) porque no aplica la anotacion especial que le indica al generador de
-        // migraciones de Npgsql que la columna ya existe -- se mantiene el helper pese al
-        // warning, verificado con una migracion de prueba (ver ADR §15.2). Se materializa
-        // en Fase 4 porque es cuando dos sesiones pueden editar la misma tarea de verdad al
-        // mismo tiempo, ver docs/decisions/arquitectura-decisiones.md §15.2 (promesa
-        // original en §14.2).
+        // Concurrencia optimista con xmin; el helper "obsoleto" se mantiene pese al warning
+        // porque el reemplazo sugerido genera una migracion invalida (ADR §15.2).
 #pragma warning disable CS0618
         builder.UseXminAsConcurrencyToken();
 #pragma warning restore CS0618
 
-        // Tareas del proyecto de ejemplo (ver ProjectConfiguration.HasData), repartidas
-        // entre las 3 columnas y los 2 usuarios semilla. Order son claves LexoRank
-        // provisorias (un caracter) -- el algoritmo real de calculo llega en Fase 3;
-        // aqui solo hace falta que ordenen correctamente entre si dentro de cada columna.
+        // Tareas del proyecto de ejemplo (ver ProjectConfiguration.HasData); Order son
+        // claves LexoRank provisorias, el algoritmo real llega en Fase 3.
         var admin = Guid.Parse("6f9b1c2e-1a2b-4c3d-8e4f-000000000001");
         var evaluador = Guid.Parse("6f9b1c2e-1a2b-4c3d-8e4f-000000000002");
         var porHacer = Guid.Parse("d1000000-0000-0000-0000-000000000001");

@@ -2,12 +2,8 @@ using GestionProyectos.Domain.Enums;
 
 namespace GestionProyectos.Infrastructure.Reports;
 
-// Traduccion compartida por todos los IReportExporter (PDF, Excel...). Duplica a proposito
-// los mismos textos que TASK_PRIORITY_LABELS / PROJECT_STATUS_LABELS del frontend (ver
-// frontend/src/app/features/board/models/task.model.ts y
-// frontend/src/app/features/projects/models/project.model.ts): no hay paquete compartido
-// entre Angular y .NET, asi que mantener la misma redaccion en ambos lados es una decision
-// deliberada de consistencia, no una duplicacion accidental.
+// Duplica a proposito TASK_PRIORITY_LABELS/PROJECT_STATUS_LABELS del frontend: no hay
+// paquete compartido entre Angular y .NET, es consistencia deliberada, no accidental.
 internal static class ReportLabels
 {
     public static string Priority(TaskPriority priority) => priority switch

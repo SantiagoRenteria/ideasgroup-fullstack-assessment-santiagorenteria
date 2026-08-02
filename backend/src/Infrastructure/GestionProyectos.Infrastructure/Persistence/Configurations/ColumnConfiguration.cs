@@ -34,10 +34,8 @@ public class ColumnConfiguration : IEntityTypeConfiguration<Column>
 
         builder.HasQueryFilter(c => !c.IsDeleted);
 
-        // Restrict, no Cascade: con soft delete la app nunca emite un DELETE fisico
-        // sobre projects (ver DeleteProjectCommandHandler), asi que un DELETE fisico
-        // aqui seria un bug, no un flujo esperado -- Restrict lo bloquea a nivel de BD
-        // como red de seguridad en vez de propagarlo silenciosamente.
+        // Restrict, no Cascade: con soft delete la app nunca emite un DELETE fisico sobre
+        // projects, asi que uno aqui seria un bug -- Restrict lo bloquea a nivel de BD.
         builder.HasOne<Project>()
             .WithMany(p => p.Columns)
             .HasForeignKey(c => c.ProjectId)

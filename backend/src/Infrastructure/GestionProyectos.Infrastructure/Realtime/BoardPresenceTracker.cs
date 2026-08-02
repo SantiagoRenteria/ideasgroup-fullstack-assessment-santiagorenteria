@@ -2,10 +2,8 @@ using System.Collections.Concurrent;
 
 namespace GestionProyectos.Infrastructure.Realtime;
 
-// En memoria, una sola instancia (Singleton, ver DependencyInjection.cs) -- no distribuido.
-// Aceptable para el alcance de esta evaluacion (un solo proceso de API); en un despliegue
-// con varias instancias detras de un balanceador haria falta un backplane compartido
-// (ej. Redis), el mismo tipo de limite que ya tiene el resto del tiempo real sin backplane.
+// En memoria, Singleton, no distribuido -- valido para un solo proceso de API; con
+// varias instancias haria falta un backplane compartido (ej. Redis).
 public class BoardPresenceTracker : IBoardPresenceTracker
 {
     // projectId -> (connectionId -> nombre del usuario). Un ConcurrentDictionary por
