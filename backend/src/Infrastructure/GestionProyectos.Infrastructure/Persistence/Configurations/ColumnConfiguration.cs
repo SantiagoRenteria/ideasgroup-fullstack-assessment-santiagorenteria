@@ -36,8 +36,11 @@ public class ColumnConfiguration : IEntityTypeConfiguration<Column>
 
         // Restrict, no Cascade: con soft delete la app nunca emite un DELETE fisico sobre
         // projects, asi que uno aqui seria un bug -- Restrict lo bloquea a nivel de BD.
+        // Sin navegacion en Project (WithMany() vacio): Project y Column son agregados
+        // independientes, no un arbol navegable de un solo agregado -- ver
+        // arquitectura-decisiones.md §22.
         builder.HasOne<Project>()
-            .WithMany(p => p.Columns)
+            .WithMany()
             .HasForeignKey(c => c.ProjectId)
             .OnDelete(DeleteBehavior.Restrict);
 
