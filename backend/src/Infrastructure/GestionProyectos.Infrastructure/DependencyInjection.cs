@@ -1,7 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using System.Text.Json;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Infrastructure.Persistence;
 using GestionProyectos.Infrastructure.Realtime;
@@ -35,10 +34,10 @@ public static class DependencyInjection
         services.AddScoped<IBoardNotifier, SignalRBoardNotifier>();
         services.AddScoped<ITokenRevocationStore, TokenRevocationStore>();
 
-        // JSON en camelCase para paridad con las respuestas REST (JsonStringEnumConverter
-        // de Program.cs) -- el cliente Angular usa los mismos DTOs para ambos canales.
-        services.AddSignalR().AddJsonProtocol(options =>
-            options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
+        // JSON en camelCase + enums como string, para paridad real con las respuestas REST
+        // -- ver RealtimeJsonOptions (testeado directamente, sin levantar SignalR) y su
+        // comentario sobre el bug real que motivo extraer esta configuracion.
+        services.AddSignalR().AddJsonProtocol(options => RealtimeJsonOptions.Configure(options.PayloadSerializerOptions));
 
         var jwtOptions = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 
