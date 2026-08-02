@@ -14,6 +14,8 @@
     align-items: center;
     gap: 0.4rem;
     margin-left: 1rem;
+    padding-right: 1.25rem;
+    border-right: 1px solid var(--surface-border);
     color: var(--text-color-secondary);
     font-size: 1rem;
     white-space: nowrap;
@@ -21,4 +23,8 @@
     i {
         font-size: 1.25rem;
     }
+}
+
+.layout-topbar-logout {
+    margin-left: 1.25rem;
 }
