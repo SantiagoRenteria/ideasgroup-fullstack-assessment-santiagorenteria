@@ -1,4 +1,5 @@
 using GestionProyectos.Domain.Entities;
+using GestionProyectos.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -21,7 +22,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasMaxLength(200)
             .IsRequired();
 
+        // Value Object Email <-> columna string (arquitectura-decisiones.md §22): el VO
+        // ya normaliza y valida formato, la columna solo lo persiste.
         builder.Property(u => u.Email)
+            .HasConversion(email => email.Value, value => new Email(value))
             .HasColumnName("email")
             .HasMaxLength(320)
             .IsRequired();

@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Entities;
+using GestionProyectos.Domain.ValueObjects;
 using GestionProyectos.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,7 +15,7 @@ public class UserRepository : IUserRepository
         _dbContext = dbContext;
     }
 
-    public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) =>
+    public Task<User?> GetByEmailAsync(Email email, CancellationToken cancellationToken) =>
         _dbContext.Users
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);

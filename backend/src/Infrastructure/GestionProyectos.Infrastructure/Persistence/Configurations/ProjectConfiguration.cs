@@ -33,6 +33,11 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .HasColumnType("date")
             .IsRequired();
 
+        // DateRange es derivada de StartDate/EndDate, no una columna propia -- ComplexProperty
+        // (EF Core 8) no soporta HasData todavia (dotnet/efcore#31254) y el seed migration
+        // (seccion 6.2 del enunciado) lo exige. Ver arquitectura-decisiones.md §22.
+        builder.Ignore(p => p.DateRange);
+
         builder.Property(p => p.Status)
             .HasColumnName("status")
             .IsRequired();

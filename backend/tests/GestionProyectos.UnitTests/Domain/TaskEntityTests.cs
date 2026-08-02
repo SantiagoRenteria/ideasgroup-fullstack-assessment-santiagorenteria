@@ -92,7 +92,7 @@ public class TaskEntityTests
         task.Move(newColumnId, "t");
 
         Assert.Equal(newColumnId, task.ColumnId);
-        Assert.Equal("t", task.Order);
+        Assert.Equal("t", task.Order.Value);
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public class TaskEntityTests
 
         Assert.Throws<ArgumentException>(() => task.Move(Guid.NewGuid(), ""));
 
-        Assert.Equal("m", task.Order);
+        Assert.Equal("m", task.Order.Value);
     }
 
     [Fact]

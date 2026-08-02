@@ -1,5 +1,6 @@
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using GestionProyectos.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -34,7 +35,10 @@ public class TaskEntityConfiguration : IEntityTypeConfiguration<TaskEntity>
         builder.Property(t => t.AssigneeId)
             .HasColumnName("assignee_id");
 
+        // Value Object LexoRankKey (arquitectura-decisiones.md §22): antes cualquier string
+        // no vacio pasaba como Order valido; el VO ahora valida tambien el alfabeto base62.
         builder.Property(t => t.Order)
+            .HasConversion(order => order.Value, value => new LexoRankKey(value))
             .HasColumnName("order")
             .HasMaxLength(100)
             .IsRequired();
@@ -54,8 +58,10 @@ public class TaskEntityConfiguration : IEntityTypeConfiguration<TaskEntity>
 
         // Restrict: mismo motivo que en ColumnConfiguration -- con soft delete un
         // DELETE fisico sobre columns nunca deberia ocurrir desde la app.
+        // Sin navegacion en Column: Column y TaskEntity son agregados independientes
+        // -- ver arquitectura-decisiones.md §22.
         builder.HasOne<Column>()
-            .WithMany(c => c.Tasks)
+            .WithMany()
             .HasForeignKey(t => t.ColumnId)
             .OnDelete(DeleteBehavior.Restrict);
 

@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Common;
+using GestionProyectos.Domain.ValueObjects;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -28,7 +29,10 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<LoginRes
 
     public async Task<Result<LoginResponseDto>> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
+        // El VO normaliza (trim + lowercase) igual que antes; el formato ya lo valida
+        // LoginCommandValidator (FluentValidation) antes de llegar aqui, asi que este
+        // Email nunca deberia lanzar por formato invalido en este punto.
+        var email = new Email(request.Email);
         var user = await _userRepository.GetByEmailAsync(email, cancellationToken);
 
         if (user is null || !_passwordHasher.Verify(request.Password, user.PasswordHash))
@@ -44,6 +48,6 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<LoginRes
         var token = _jwtTokenGenerator.Generate(user);
 
         return Result<LoginResponseDto>.Success(
-            new LoginResponseDto(token.Value, token.ExpiresAtUtc, user.Name, user.Email));
+            new LoginResponseDto(token.Value, token.ExpiresAtUtc, user.Name, user.Email.Value));
     }
 }

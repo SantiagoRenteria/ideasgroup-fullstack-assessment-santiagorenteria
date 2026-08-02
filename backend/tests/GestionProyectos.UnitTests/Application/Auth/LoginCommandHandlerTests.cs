@@ -2,6 +2,7 @@ using GestionProyectos.Application.Auth;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
+using GestionProyectos.Domain.ValueObjects;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
@@ -29,12 +30,12 @@ public class LoginCommandHandlerTests
         var expiresAt = DateTime.UtcNow.AddHours(1);
         _jwtTokenGenerator.Generate(user).Returns(new JwtToken("jwt-emitido", expiresAt));
 
-        var result = await CreateHandler().Handle(new LoginCommand(user.Email, "IdeasGroup2026!"), CancellationToken.None);
+        var result = await CreateHandler().Handle(new LoginCommand(user.Email.Value, "IdeasGroup2026!"), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal("jwt-emitido", result.Value!.Token);
         Assert.Equal(user.Name, result.Value.Name);
-        Assert.Equal(user.Email, result.Value.Email);
+        Assert.Equal(user.Email.Value, result.Value.Email);
         Assert.Equal(expiresAt, result.Value.ExpiresAtUtc);
     }
 
@@ -42,19 +43,22 @@ public class LoginCommandHandlerTests
     public async Task Handle_NormalizaElCorreoAntesDeBuscarlo()
     {
         var user = BuildUser("admin@ideasgroup.test");
-        _userRepository.GetByEmailAsync("admin@ideasgroup.test", Arg.Any<CancellationToken>()).Returns(user);
+        var expectedEmail = new Email("admin@ideasgroup.test");
+        _userRepository.GetByEmailAsync(expectedEmail, Arg.Any<CancellationToken>()).Returns(user);
         _passwordHasher.Verify(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _jwtTokenGenerator.Generate(user).Returns(new JwtToken("jwt", DateTime.UtcNow));
 
         await CreateHandler().Handle(new LoginCommand("  Admin@IdeasGroup.test  ", "IdeasGroup2026!"), CancellationToken.None);
 
-        await _userRepository.Received(1).GetByEmailAsync("admin@ideasgroup.test", Arg.Any<CancellationToken>());
+        // El VO Email normaliza trim+lowercase, asi que el repositorio recibe la forma
+        // canonica aunque el usuario haya escrito espacios y mayusculas.
+        await _userRepository.Received(1).GetByEmailAsync(expectedEmail, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Handle_UsuarioNoExiste_RetornaElMismoMensajeGenericoQuePasswordIncorrecta()
     {
-        _userRepository.GetByEmailAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((User?)null);
+        _userRepository.GetByEmailAsync(Arg.Any<Email>(), Arg.Any<CancellationToken>()).Returns((User?)null);
 
         var result = await CreateHandler().Handle(new LoginCommand("desconocido@ideasgroup.test", "cualquiera"), CancellationToken.None);
 
@@ -73,7 +77,7 @@ public class LoginCommandHandlerTests
         _userRepository.GetByEmailAsync(user.Email, Arg.Any<CancellationToken>()).Returns(user);
         _passwordHasher.Verify("incorrecta", user.PasswordHash).Returns(false);
 
-        var result = await CreateHandler().Handle(new LoginCommand(user.Email, "incorrecta"), CancellationToken.None);
+        var result = await CreateHandler().Handle(new LoginCommand(user.Email.Value, "incorrecta"), CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.Equal("Correo o contraseña incorrectos.", result.Error);

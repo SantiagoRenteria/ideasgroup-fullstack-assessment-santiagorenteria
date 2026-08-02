@@ -16,7 +16,8 @@ public class ProjectTests
 
         Assert.Equal("Migracion ERP", project.Name);
         Assert.Equal(ProjectStatus.Planned, project.Status);
-        Assert.Empty(project.Columns);
+        Assert.Equal(Start, project.DateRange.Start);
+        Assert.Equal(End, project.DateRange.End);
     }
 
     [Theory]
@@ -49,7 +50,7 @@ public class ProjectTests
     {
         var project = new Project(Guid.NewGuid(), "Nombre", "Descripcion", Start, Start, ProjectStatus.Planned);
 
-        Assert.Equal(Start, project.EndDate);
+        Assert.Equal(Start, project.DateRange.End);
     }
 
     [Fact]
@@ -61,7 +62,7 @@ public class ProjectTests
 
         Assert.Equal("Nuevo nombre", project.Name);
         Assert.Equal("Nueva descripcion", project.Description);
-        Assert.Equal(End.AddDays(30), project.EndDate);
+        Assert.Equal(End.AddDays(30), project.DateRange.End);
         Assert.Equal(ProjectStatus.InProgress, project.Status);
     }
 
@@ -74,7 +75,7 @@ public class ProjectTests
             project.Update("Nombre", "Descripcion", Start, Start.AddDays(-1), ProjectStatus.Completed));
 
         Assert.Equal(ProjectStatus.Planned, project.Status);
-        Assert.Equal(End, project.EndDate);
+        Assert.Equal(End, project.DateRange.End);
     }
 
     [Fact]

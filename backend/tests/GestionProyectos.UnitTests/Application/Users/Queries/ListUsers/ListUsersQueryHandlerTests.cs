@@ -23,7 +23,7 @@ public class ListUsersQueryHandlerTests
         var dto = Assert.Single(result);
         Assert.Equal(user.Id, dto.Id);
         Assert.Equal(user.Name, dto.Name);
-        Assert.Equal(user.Email, dto.Email);
+        Assert.Equal(user.Email.Value, dto.Email);
     }
 
     [Fact]
