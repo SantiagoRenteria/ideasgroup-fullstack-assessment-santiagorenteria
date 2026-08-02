@@ -143,9 +143,20 @@ El endpoint resuelve por inyección de `IEnumerable<IReportExporter>`, nunca por
 
 ## 6. Observabilidad
 
-- **Serilog**: logging estructurado en JSON con propiedades contextuales (`UserId`, `ProyectoId`).
-- **OpenTelemetry SDK** en la API, exportando trazas/métricas/logs vía OTLP hacia **Aspire Dashboard standalone** (contenedor único en docker-compose, sin AppHost).
+- **Serilog**: logging estructurado en JSON. Hasta la Fase 6, esto solo capturaba dos cosas automáticas sin código de aplicación: `UseSerilogRequestLogging()` (una línea por request HTTP) y el logging interno de EF Core (SQL ejecutado) -- cero logging de aplicación, y la propiedad `UserId` mencionada más abajo no existía todavía (afirmación corregida en Fase 7, issue #37, ver el punto siguiente).
+- **OpenTelemetry SDK** en la API, exportando trazas/métricas/logs vía OTLP hacia **Aspire Dashboard standalone** (contenedor único en docker-compose, sin AppHost). **No implementado** -- evaluado y descartado explícitamente por prioridad (ver Fase 7 más abajo), no es una omisión accidental.
 - Sin puntos directos en el rubro de evaluación; se incluye como buena práctica de bajo riesgo de infraestructura, priorizado por debajo de todo lo obligatorio.
+
+### 6.1 `ILogger` real en handlers críticos (Fase 7, issue #37)
+
+Detectado al explicar en sesión por qué ninguna clase inyectaba `ILogger` (pregunta directa de Santiago): sin logging de aplicación, un error real en producción (login fallido, conflicto de concurrencia al mover una tarea) no dejaba ningún rastro diagnosticable más allá del código de estado HTTP.
+
+- `ILogger<T>` inyectado en `LoginCommandHandler` y los 4 handlers de `Tasks` (Create/Update/Delete/Move) -- los puntos con mayor valor de diagnóstico, no todos los handlers del proyecto (criterio de riesgo, no cobertura numérica).
+- `LogWarning` en cada ruta de fallo relevante: login con credenciales incorrectas (solo el correo, nunca la contraseña), entidad no encontrada, y el caso más valioso -- conflicto de concurrencia `ConcurrencyConflictException` al actualizar/eliminar/mover una tarea, exactamente el escenario que Santiago señaló como indiagnosticable.
+- `LogContext.PushProperty("UserId", ...)` vía middleware en `Program.cs` (no en un handler): se ejecuta una vez por request, después de `UseAuthentication` y antes de `UseAuthorization` a propósito, para que incluso los intentos rechazados por autorización queden asociados a un usuario en los logs. Enriquece automáticamente *todo* log del resto del request (los de aplicación y los automáticos de EF/request-logging), sin tocar cada `LogWarning` individual.
+- **Detalle no obvio verificado en runtime, no asumido:** el claim `UserId` se busca con `ClaimTypes.NameIdentifier`, no `JwtRegisteredClaimNames.Sub` -- `JwtSecurityTokenHandler.DefaultInboundClaimTypeMap` remapea "sub" a ese URI largo por defecto (junto con "email"→`ClaimTypes.Email`), pero **no** remapea "jti"/"name"/"exp" (por eso el logout y el indicador de presencia, Fase 4 y #24, ya funcionaban buscando esos claims por su nombre corto sin problema). Se comprobó volcando los claims reales del `ClaimsPrincipal` en runtime antes de asumir cuál era el nombre correcto -- una primera versión con `JwtRegisteredClaimNames.Sub` compilaba y corría sin error, pero producía `UserId: null` en todos los logs.
+
+Verificado con `curl` contra la API real: login fallido queda logueado con el correo (`UserId: null`, correcto, todavía no autenticado); mover una tarea inexistente ya autenticado queda logueado con el `TaskId` **y** el `UserId` real del usuario.
 
 ---
 

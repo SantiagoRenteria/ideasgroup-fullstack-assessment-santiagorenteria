@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using FluentValidation;
@@ -12,6 +13,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Serilog;
+using Serilog.Context;
 using Serilog.Formatting.Compact;
 
 // Bootstrap logger: captura errores durante el arranque (antes de que el host y su
@@ -129,6 +131,26 @@ try
     app.UseCors();
     app.UseRateLimiter();
     app.UseAuthentication();
+
+    // Enriquece todo log emitido durante el resto del request (aplicacion, EF, el propio
+    // request-logging) con el UserId del JWT ya validado -- para que ADR §6 sea verídico
+    // (issue #37). Corre despues de UseAuthentication (que puebla HttpContext.User) y antes
+    // de UseAuthorization a proposito: asi los intentos rechazados por autorizacion tambien
+    // quedan asociados a un usuario en los logs, no solo los que pasan.
+    app.Use(async (context, next) =>
+    {
+        // ClaimTypes.NameIdentifier, no JwtRegisteredClaimNames.Sub: ASP.NET Core remapea
+        // "sub" a ese URI largo por defecto (JwtSecurityTokenHandler.DefaultInboundClaimTypeMap),
+        // verificado volcando los claims reales en runtime -- "jti"/"name"/"exp" no se
+        // remapean (por eso el resto del proyecto los busca por su nombre corto sin problema).
+        var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        using (LogContext.PushProperty("UserId", userId))
+        {
+            await next();
+        }
+    });
+
     app.UseAuthorization();
 
     app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));

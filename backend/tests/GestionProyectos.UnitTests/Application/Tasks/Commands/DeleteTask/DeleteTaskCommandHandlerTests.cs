@@ -3,6 +3,7 @@ using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Tasks.Commands.DeleteTask;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -16,7 +17,7 @@ public class DeleteTaskCommandHandlerTests
     private readonly IBoardNotifier _boardNotifier = Substitute.For<IBoardNotifier>();
 
     private DeleteTaskCommandHandler CreateHandler() =>
-        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier);
+        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier, NullLogger<DeleteTaskCommandHandler>.Instance);
 
     [Fact]
     public async Task Handle_TareaExiste_LaEliminaYPersisteCambios()
