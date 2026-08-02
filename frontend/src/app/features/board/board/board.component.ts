@@ -3,12 +3,14 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { Subscription } from 'rxjs';
+import { AppUser } from '../models/app-user.model';
 import { Board, BoardColumn } from '../models/board.model';
-import { BoardTask, TASK_PRIORITY_LABELS, TASK_PRIORITY_SEVERITY } from '../models/task.model';
+import { BoardTask, TASK_PRIORITY_LABELS, TASK_PRIORITY_SEVERITY, TaskPriority } from '../models/task.model';
 import { RealtimeBoardService, TaskDeletedPayload, TaskMovedPayload } from '../services/realtime-board.service';
 import { BoardService } from '../services/board.service';
 import { ReportFormat, ReportService } from '../services/report.service';
 import { TaskService } from '../services/task.service';
+import { UserService } from '../services/user.service';
 
 @Component({
     selector: 'app-board',
@@ -25,8 +27,13 @@ export class BoardComponent implements OnInit, OnDestroy {
     targetColumnId: string | null = null;
     downloadingReport: ReportFormat | null = null;
 
+    users: AppUser[] = [];
+    filterAssigneeId: string | null = null;
+    filterPriority: TaskPriority | null = null;
+
     readonly priorityLabels = TASK_PRIORITY_LABELS;
     readonly prioritySeverity = TASK_PRIORITY_SEVERITY;
+    readonly priorityOptions = Object.values(TaskPriority).map((value) => ({ label: TASK_PRIORITY_LABELS[value], value }));
 
     private projectId!: string;
     private readonly realtimeSubscriptions: Subscription[] = [];
@@ -36,6 +43,7 @@ export class BoardComponent implements OnInit, OnDestroy {
         private boardService: BoardService,
         private taskService: TaskService,
         private reportService: ReportService,
+        private userService: UserService,
         private realtimeService: RealtimeBoardService,
         private confirmationService: ConfirmationService,
         private messageService: MessageService
@@ -45,6 +53,12 @@ export class BoardComponent implements OnInit, OnDestroy {
         this.projectId = this.route.snapshot.paramMap.get('projectId')!;
         this.loadBoard();
         this.connectRealtime();
+        this.userService.listAll().subscribe({
+            next: (users) => (this.users = users),
+            // No bloquea el uso del tablero: solo el filtro por responsable queda sin
+            // opciones hasta la proxima carga exitosa.
+            error: () => this.messageService.add({ severity: 'warn', summary: 'Aviso', detail: 'No se pudo cargar la lista de responsables' })
+        });
     }
 
     // Cierre correcto de la conexion y las suscripciones al destruir el componente
@@ -128,12 +142,36 @@ export class BoardComponent implements OnInit, OnDestroy {
         });
     }
 
+    // Deseable seccion 7: filtro por responsable/prioridad, client-side -- el tablero ya
+    // trae todas las tareas cargadas de una vez, filtrar aca evita un round-trip por cada
+    // cambio de combo. Ninguno de los dos metodos siguientes muta board.columns[].tasks:
+    // el estado real del tablero queda intacto para que el codigo de tiempo real (que si
+    // mutasos arrays) siga funcionando sin cambios.
+    get isFiltering(): boolean {
+        return this.filterAssigneeId !== null || this.filterPriority !== null;
+    }
+
+    getVisibleTasks(column: BoardColumn): BoardTask[] {
+        return column.tasks.filter(
+            (task) =>
+                (this.filterAssigneeId === null || task.assigneeId === this.filterAssigneeId) &&
+                (this.filterPriority === null || task.priority === this.filterPriority)
+        );
+    }
+
+    clearFilters(): void {
+        this.filterAssigneeId = null;
+        this.filterPriority = null;
+    }
+
     // Descarga funcional desde la interfaz (seccion 6.8, issue #19): dispara el guardado
     // del archivo via un <a download> efimero, en vez de navegar a la URL del endpoint --
     // asi el request sigue llevando el header Authorization (el JWT no viaja en la URL).
+    // Manda el mismo filtro que esta activo en el tablero (deseable seccion 7).
     downloadReport(format: ReportFormat): void {
         this.downloadingReport = format;
-        this.reportService.download(this.projectId, format).subscribe({
+        const filters = { assigneeId: this.filterAssigneeId, priority: this.filterPriority };
+        this.reportService.download(this.projectId, format, filters).subscribe({
             next: ({ blob, fileName }) => {
                 this.downloadingReport = null;
                 this.triggerDownload(blob, fileName);

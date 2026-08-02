@@ -4,12 +4,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { Subject, of, throwError } from 'rxjs';
+import { AppUser } from '../models/app-user.model';
 import { Board } from '../models/board.model';
 import { BoardTask, TaskPriority } from '../models/task.model';
 import { BoardService } from '../services/board.service';
 import { RealtimeBoardService, TaskDeletedPayload, TaskMovedPayload } from '../services/realtime-board.service';
 import { ReportService } from '../services/report.service';
 import { TaskService } from '../services/task.service';
+import { UserService } from '../services/user.service';
 import { BoardComponent } from './board.component';
 
 describe('BoardComponent', () => {
@@ -18,13 +20,20 @@ describe('BoardComponent', () => {
     let boardService: jasmine.SpyObj<BoardService>;
     let taskService: jasmine.SpyObj<TaskService>;
     let reportService: jasmine.SpyObj<ReportService>;
+    let userService: jasmine.SpyObj<UserService>;
     let taskCreated$: Subject<BoardTask>;
     let taskUpdated$: Subject<BoardTask>;
     let taskDeleted$: Subject<TaskDeletedPayload>;
     let taskMoved$: Subject<TaskMovedPayload>;
 
-    function createTask(id: string, columnId: string, order: string): BoardTask {
-        return { id, columnId, title: `Tarea ${id}`, description: 'Desc', priority: TaskPriority.Medium, assigneeId: null, order, createdAt: '2026-07-01T00:00:00Z' };
+    function createTask(
+        id: string,
+        columnId: string,
+        order: string,
+        priority: TaskPriority = TaskPriority.Medium,
+        assigneeId: string | null = null
+    ): BoardTask {
+        return { id, columnId, title: `Tarea ${id}`, description: 'Desc', priority, assigneeId, order, createdAt: '2026-07-01T00:00:00Z' };
     }
 
     function buildBoard(): Board {
@@ -42,7 +51,9 @@ describe('BoardComponent', () => {
         boardService = jasmine.createSpyObj('BoardService', ['getByProject']);
         taskService = jasmine.createSpyObj('TaskService', ['move', 'delete']);
         reportService = jasmine.createSpyObj('ReportService', ['download']);
+        userService = jasmine.createSpyObj('UserService', ['listAll']);
         boardService.getByProject.and.returnValue(of(buildBoard()));
+        userService.listAll.and.returnValue(of([]));
 
         taskCreated$ = new Subject<BoardTask>();
         taskUpdated$ = new Subject<BoardTask>();
@@ -65,6 +76,7 @@ describe('BoardComponent', () => {
                 { provide: BoardService, useValue: boardService },
                 { provide: TaskService, useValue: taskService },
                 { provide: ReportService, useValue: reportService },
+                { provide: UserService, useValue: userService },
                 { provide: RealtimeBoardService, useValue: realtimeService },
                 { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ projectId: 'proj-1' }) } } },
                 ConfirmationService,
@@ -214,9 +226,21 @@ describe('BoardComponent', () => {
 
         component.downloadReport('pdf');
 
-        expect(reportService.download).toHaveBeenCalledWith('proj-1', 'pdf');
+        expect(reportService.download).toHaveBeenCalledWith('proj-1', 'pdf', { assigneeId: null, priority: null });
         expect((component as any).triggerDownload).toHaveBeenCalledWith(blob, 'reporte-demo.pdf');
         expect(component.downloadingReport).toBeNull();
+    });
+
+    it('downloadReport manda el filtro activo del tablero al pedir el reporte (seccion 7)', () => {
+        fixture.detectChanges();
+        reportService.download.and.returnValue(of({ blob: new Blob(), fileName: 'reporte.pdf' }));
+        spyOn(component as any, 'triggerDownload');
+        component.filterAssigneeId = 'user-1';
+        component.filterPriority = TaskPriority.High;
+
+        component.downloadReport('pdf');
+
+        expect(reportService.download).toHaveBeenCalledWith('proj-1', 'pdf', { assigneeId: 'user-1', priority: TaskPriority.High });
     });
 
     it('downloadReport muestra un error si la descarga falla, sin dejar el boton en estado de carga', () => {
@@ -232,6 +256,54 @@ describe('BoardComponent', () => {
 
         expect(component.downloadingReport).toBeNull();
         expect(messageService.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'error' }));
+    });
+
+    it('getVisibleTasks solo devuelve las tareas que matchean el responsable filtrado, sin mutar el tablero real', () => {
+        fixture.detectChanges();
+        const column = component.board!.columns[0];
+        column.tasks = [
+            createTask('t1', column.id, 'a', TaskPriority.Medium, 'user-1'),
+            createTask('t2', column.id, 'b', TaskPriority.Medium, 'user-2')
+        ];
+        component.filterAssigneeId = 'user-1';
+
+        const visible = component.getVisibleTasks(column);
+
+        expect(visible.map((t) => t.id)).toEqual(['t1']);
+        expect(column.tasks.length).toBe(2); // el estado real del tablero no se toca
+    });
+
+    it('getVisibleTasks solo devuelve las tareas que matchean la prioridad filtrada', () => {
+        fixture.detectChanges();
+        const column = component.board!.columns[0];
+        column.tasks = [createTask('t1', column.id, 'a', TaskPriority.Urgent), createTask('t2', column.id, 'b', TaskPriority.Low)];
+        component.filterPriority = TaskPriority.Urgent;
+
+        const visible = component.getVisibleTasks(column);
+
+        expect(visible.map((t) => t.id)).toEqual(['t1']);
+    });
+
+    it('isFiltering es true solo cuando hay al menos un filtro activo', () => {
+        expect(component.isFiltering).toBeFalse();
+
+        component.filterAssigneeId = 'user-1';
+        expect(component.isFiltering).toBeTrue();
+
+        component.filterAssigneeId = null;
+        component.filterPriority = TaskPriority.High;
+        expect(component.isFiltering).toBeTrue();
+    });
+
+    it('clearFilters limpia ambos filtros', () => {
+        component.filterAssigneeId = 'user-1';
+        component.filterPriority = TaskPriority.High;
+
+        component.clearFilters();
+
+        expect(component.filterAssigneeId).toBeNull();
+        expect(component.filterPriority).toBeNull();
+        expect(component.isFiltering).toBeFalse();
     });
 
     it('ngOnDestroy deja el tablero y cierra la conexion de tiempo real', () => {

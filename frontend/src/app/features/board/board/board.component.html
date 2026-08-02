@@ -26,11 +26,40 @@
     </div>
 </div>
 
+<div class="board-filters flex align-items-center gap-2 mb-4 flex-wrap" *ngIf="board">
+    <p-dropdown
+        [options]="users"
+        optionLabel="name"
+        optionValue="id"
+        [(ngModel)]="filterAssigneeId"
+        [showClear]="true"
+        placeholder="Filtrar por responsable"
+        appendTo="body"
+    ></p-dropdown>
+    <p-dropdown
+        [options]="priorityOptions"
+        optionLabel="label"
+        optionValue="value"
+        [(ngModel)]="filterPriority"
+        [showClear]="true"
+        placeholder="Filtrar por prioridad"
+        appendTo="body"
+    ></p-dropdown>
+    <button
+        pButton
+        type="button"
+        label="Limpiar filtros"
+        class="p-button-text p-button-sm"
+        *ngIf="isFiltering"
+        (click)="clearFilters()"
+    ></button>
+</div>
+
 <div class="board-columns" cdkDropListGroup *ngIf="board">
     <div class="board-column card" *ngFor="let column of board.columns; trackBy: trackByColumnId">
         <div class="board-column-header flex justify-content-between align-items-center mb-3">
             <span class="font-bold">{{ column.name }}</span>
-            <span class="board-column-count">{{ column.tasks.length }}</span>
+            <span class="board-column-count">{{ getVisibleTasks(column).length }}</span>
         </div>
 
         <div
@@ -38,9 +67,16 @@
             cdkDropList
             [id]="column.id"
             [cdkDropListData]="column.tasks"
+            [cdkDropListDisabled]="isFiltering"
             (cdkDropListDropped)="onDrop($event, column)"
         >
-            <div class="board-task-card" *ngFor="let task of column.tasks; trackBy: trackByTaskId" cdkDrag [cdkDragData]="task">
+            <div
+                class="board-task-card"
+                *ngFor="let task of getVisibleTasks(column); trackBy: trackByTaskId"
+                cdkDrag
+                [cdkDragDisabled]="isFiltering"
+                [cdkDragData]="task"
+            >
                 <div class="board-task-card-placeholder" *cdkDragPlaceholder></div>
 
                 <div class="flex justify-content-between align-items-start gap-2">
