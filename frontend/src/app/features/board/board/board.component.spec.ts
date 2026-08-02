@@ -25,6 +25,7 @@ describe('BoardComponent', () => {
     let taskUpdated$: Subject<BoardTask>;
     let taskDeleted$: Subject<TaskDeletedPayload>;
     let taskMoved$: Subject<TaskMovedPayload>;
+    let connectedUsers$: Subject<string[]>;
 
     function createTask(
         id: string,
@@ -59,6 +60,7 @@ describe('BoardComponent', () => {
         taskUpdated$ = new Subject<BoardTask>();
         taskDeleted$ = new Subject<TaskDeletedPayload>();
         taskMoved$ = new Subject<TaskMovedPayload>();
+        connectedUsers$ = new Subject<string[]>();
         const realtimeService = {
             connect: () => Promise.resolve(),
             joinBoard: () => Promise.resolve(),
@@ -67,7 +69,8 @@ describe('BoardComponent', () => {
             taskCreated$,
             taskUpdated$,
             taskDeleted$,
-            taskMoved$
+            taskMoved$,
+            connectedUsers$
         };
 
         await TestBed.configureTestingModule({
@@ -304,6 +307,14 @@ describe('BoardComponent', () => {
         expect(component.filterAssigneeId).toBeNull();
         expect(component.filterPriority).toBeNull();
         expect(component.isFiltering).toBeFalse();
+    });
+
+    it('un BoardPresenceChanged recibido por el canal actualiza la lista de conectados', () => {
+        fixture.detectChanges();
+
+        connectedUsers$.next(['Administrador', 'Evaluador']);
+
+        expect(component.connectedUsers).toEqual(['Administrador', 'Evaluador']);
     });
 
     it('ngOnDestroy deja el tablero y cierra la conexion de tiempo real', () => {
