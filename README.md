@@ -72,7 +72,7 @@ El `.env.example` ya trae valores por defecto funcionales para un entorno de eva
 
 | Correo | Contraseña |
 |---|---|
-| `admin@ideasgroup.test` | `IdeasGroup2026!` |
+| `luis.renteria@ideasgroup.test` | `IdeasGroup2026!` |
 | `evaluador@ideasgroup.test` | `IdeasGroup2026!` |
 
 **Colección de Postman**: `postman/GestionProyectos.postman_collection.json` + `postman/GestionProyectos.postman_environment.json` (environment "GestionProyectos - Local"). Cubre Auth, Projects y Columns con happy path y casos de error (401/404/409), encadenando automáticamente los IDs creados.
