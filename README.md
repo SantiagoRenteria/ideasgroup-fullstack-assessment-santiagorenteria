@@ -2,7 +2,7 @@
 
 Aplicativo web para la gestión de proyectos ágiles: proyectos, columnas configurables y tablero kanban con tiempo real, sobre .NET 8 (arquitectura hexagonal) + Angular 17 (PrimeNG/Sakai) + PostgreSQL.
 
-> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-01, al cierre de la Fase 4.
+> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-02, al cierre de los obligatorios de la Fase 6.
 
 ---
 
@@ -34,7 +34,7 @@ Plan completo de 7 días en `docs/fases-implementacion.md`. Estado actual:
 | 3 | Tablero kanban, tareas, drag&drop, cálculo de posición (LexoRank) | ✅ Completa |
 | 4 | Tiempo real (SignalR) | ✅ Completa |
 | 5 | Reportes duales (PDF/Excel) | ✅ Completa |
-| 6 | Pruebas restantes, diagrama ERD, opcionales | ⏳ Pendiente |
+| 6 | Pruebas restantes, diagrama ERD | ✅ Completa — opcionales (§7 del enunciado) pendientes de decisión de alcance |
 
 Este README se actualiza al cierre de cada fase — las secciones marcadas "Pendiente" abajo reflejan el diseño ya decidido (documentado en `docs/decisions/arquitectura-decisiones.md`), no lo implementado todavía.
 
