@@ -55,7 +55,7 @@ public class CreateTaskCommandHandlerTests
         var result = await handler.Handle(command, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.True(string.CompareOrdinal(existing.Order, result.Value!.Order) < 0);
+        Assert.True(string.CompareOrdinal(existing.Order.Value, result.Value!.Order) < 0);
     }
 
     [Fact]

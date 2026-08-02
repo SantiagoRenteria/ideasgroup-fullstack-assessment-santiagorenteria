@@ -29,7 +29,7 @@ public class JwtTokenGeneratorTests
         Assert.Equal(_options.Issuer, jwt.Issuer);
         Assert.Equal(_options.Audience, jwt.Audiences.Single());
         Assert.Equal(user.Id.ToString(), jwt.Claims.Single(c => c.Type == JwtRegisteredClaimNames.Sub).Value);
-        Assert.Equal(user.Email, jwt.Claims.Single(c => c.Type == JwtRegisteredClaimNames.Email).Value);
+        Assert.Equal(user.Email.Value, jwt.Claims.Single(c => c.Type == JwtRegisteredClaimNames.Email).Value);
         Assert.True(token.ExpiresAtUtc > DateTime.UtcNow);
     }
 }

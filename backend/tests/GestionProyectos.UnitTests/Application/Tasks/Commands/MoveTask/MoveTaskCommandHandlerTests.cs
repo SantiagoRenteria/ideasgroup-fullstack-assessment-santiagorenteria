@@ -45,8 +45,8 @@ public class MoveTaskCommandHandlerTests
         var result = await handler.Handle(new MoveTaskCommand(task.Id, columnId, 1), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.True(string.CompareOrdinal(before.Order, task.Order) < 0);
-        Assert.True(string.CompareOrdinal(task.Order, after.Order) < 0);
+        Assert.True(before.Order < task.Order);
+        Assert.True(task.Order < after.Order);
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -91,10 +91,10 @@ public class MoveTaskCommandHandlerTests
         var result = await handler.Handle(new MoveTaskCommand(task.Id, columnId, 1), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.NotEqual("aaaaaaaa", before.Order);
-        Assert.NotEqual("aaaaaaab", after.Order);
-        Assert.True(string.CompareOrdinal(before.Order, task.Order) < 0);
-        Assert.True(string.CompareOrdinal(task.Order, after.Order) < 0);
+        Assert.NotEqual("aaaaaaaa", before.Order.Value);
+        Assert.NotEqual("aaaaaaab", after.Order.Value);
+        Assert.True(before.Order < task.Order);
+        Assert.True(task.Order < after.Order);
     }
 
     [Fact]
