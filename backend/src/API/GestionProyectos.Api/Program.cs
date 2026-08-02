@@ -117,6 +117,7 @@ try
     app.MapTasksEndpoints();
     app.MapBoardEndpoints();
     app.MapUsersEndpoints();
+    app.MapReportsEndpoints();
     app.MapHub<BoardHub>("/hubs/board").RequireAuthorization();
 
     app.Run();

@@ -7,6 +7,7 @@ import { Board, BoardColumn } from '../models/board.model';
 import { BoardTask, TASK_PRIORITY_LABELS, TASK_PRIORITY_SEVERITY } from '../models/task.model';
 import { RealtimeBoardService, TaskDeletedPayload, TaskMovedPayload } from '../services/realtime-board.service';
 import { BoardService } from '../services/board.service';
+import { ReportFormat, ReportService } from '../services/report.service';
 import { TaskService } from '../services/task.service';
 
 @Component({
@@ -22,6 +23,7 @@ export class BoardComponent implements OnInit, OnDestroy {
     taskFormVisible = false;
     editingTask: BoardTask | null = null;
     targetColumnId: string | null = null;
+    downloadingReport: ReportFormat | null = null;
 
     readonly priorityLabels = TASK_PRIORITY_LABELS;
     readonly prioritySeverity = TASK_PRIORITY_SEVERITY;
@@ -33,6 +35,7 @@ export class BoardComponent implements OnInit, OnDestroy {
         private route: ActivatedRoute,
         private boardService: BoardService,
         private taskService: TaskService,
+        private reportService: ReportService,
         private realtimeService: RealtimeBoardService,
         private confirmationService: ConfirmationService,
         private messageService: MessageService
@@ -123,6 +126,32 @@ export class BoardComponent implements OnInit, OnDestroy {
                 this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar el tablero' });
             }
         });
+    }
+
+    // Descarga funcional desde la interfaz (seccion 6.8, issue #19): dispara el guardado
+    // del archivo via un <a download> efimero, en vez de navegar a la URL del endpoint --
+    // asi el request sigue llevando el header Authorization (el JWT no viaja en la URL).
+    downloadReport(format: ReportFormat): void {
+        this.downloadingReport = format;
+        this.reportService.download(this.projectId, format).subscribe({
+            next: ({ blob, fileName }) => {
+                this.downloadingReport = null;
+                this.triggerDownload(blob, fileName);
+            },
+            error: () => {
+                this.downloadingReport = null;
+                this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No se pudo descargar el reporte' });
+            }
+        });
+    }
+
+    private triggerDownload(blob: Blob, fileName: string): void {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        link.click();
+        URL.revokeObjectURL(url);
     }
 
     trackByColumnId(_index: number, column: BoardColumn): string {

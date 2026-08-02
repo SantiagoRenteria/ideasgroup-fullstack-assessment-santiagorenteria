@@ -33,7 +33,7 @@ Plan completo de 7 días en `docs/fases-implementacion.md`. Estado actual:
 | 2 | CRUD de Proyectos y Columnas, paginación/filtro, soft-delete | ✅ Completa |
 | 3 | Tablero kanban, tareas, drag&drop, cálculo de posición (LexoRank) | ✅ Completa |
 | 4 | Tiempo real (SignalR) | ✅ Completa |
-| 5 | Reportes duales (PDF/Excel) | ⏳ Pendiente |
+| 5 | Reportes duales (PDF/Excel) | ✅ Completa |
 | 6 | Pruebas restantes, diagrama ERD, opcionales | ⏳ Pendiente |
 
 Este README se actualiza al cierre de cada fase — las secciones marcadas "Pendiente" abajo reflejan el diseño ya decidido (documentado en `docs/decisions/arquitectura-decisiones.md`), no lo implementado todavía.
@@ -85,8 +85,8 @@ El `.env.example` ya trae valores por defecto funcionales para un entorno de eva
 | Validación | FluentValidation |
 | Autenticación | JWT (HS256), BCrypt + pepper |
 | Contenedores | Docker Compose (Postgres, API, SPA con nginx) |
-| Reporte PDF | QuestPDF *(Fase 5, pendiente)* |
-| Reporte Excel | ClosedXML *(Fase 5, pendiente)* |
+| Reporte PDF | QuestPDF |
+| Reporte Excel | ClosedXML |
 | Tiempo real | SignalR |
 
 Detalle completo y alternativas descartadas: `docs/decisions/arquitectura-decisiones.md` §1.
@@ -160,7 +160,11 @@ Alternativas descartadas (índice entero secuencial, `float`, lista enlazada) y 
 
 ## 8. Exportación dual (PDF/Excel)
 
-**Pendiente (Fase 5).** Diseño ya definido: un DTO común (`ProjectReportDto`) y una sola consulta EF alimentan ambos formatos; `IReportExporter` como puerto, con `QuestPdfReportExporter` y `ClosedXmlReportExporter` resueltos por inyección de `IEnumerable<IReportExporter>` — agregar un tercer formato no requiere tocar el endpoint ni las clases existentes. Detalle: ADR §5.
+Un DTO común (`ProjectReportDto`) y una sola consulta EF (`IProjectReportRepository`, `LEFT JOIN` encadenado `Project → Columns → Tasks → User`) alimentan ambos formatos. `IReportExporter` es el puerto de extensibilidad: `QuestPdfReportExporter` y `ClosedXmlReportExporter` se resuelven por inyección de `IEnumerable<IReportExporter>` en `ExportProjectReportQueryHandler` — agregar un tercer formato es una clase nueva + un registro DI, sin tocar el endpoint ni las clases existentes.
+
+`GET /api/projects/{projectId}/report?format=pdf|excel` devuelve el archivo con `Content-Type` y `Content-Disposition` (nombre `reporte-{proyecto}-{fecha}.{ext}`) correctos por formato. Desde el tablero (`app-board`), los botones "Reporte PDF" y "Reporte Excel" piden el blob con el JWT ya inyectado por `AuthInterceptor` y disparan la descarga con un `<a download>` efímero — no se navega directo a la URL del endpoint, porque el token no puede viajar en la query string. Verificado end-to-end contra PostgreSQL real, no solo en tests unitarios.
+
+Detalle completo, incluida la justificación de por qué la consulta arranca desde `Projects` (no desde `Tasks`, para distinguir proyecto inexistente de proyecto sin tareas) y por qué `ExportProjectReportQuery` es un único query CQRS-puro sin mutación de estado: ADR §5 y §18.
 
 ---
 
@@ -174,8 +178,8 @@ Alternativas descartadas (índice entero secuencial, `float`, lista enlazada) y 
 
 | Capa | Cantidad | Cobertura |
 |---|---|---|
-| Backend (xUnit) | 100 | Domain (entidades, validaciones, soft-delete, `LexoRankService`), Application (handlers CQRS con NSubstitute, incluida la regla "no borrar con tareas", el rebalanceo de `MoveTaskCommandHandler`, la notificación por tiempo real con exclusión del emisor, el conflicto de concurrencia `xmin` y la revocación de tokens en `LogoutCommandHandler`), Infrastructure (BCrypt, JWT) |
-| Frontend (Jasmine/Karma) | 56 | `ProjectService`, `ColumnService`, `TaskService` (incluido el header `X-Realtime-Connection-Id`), `BoardService`, `UserService`, `RealtimeBoardService`, `AuthService` (revocación en logout), `AuthInterceptor`, `ProjectFormComponent`, `AppTopBarComponent`, `BoardComponent` (reordenamiento optimista y reversión, y aplicación de los cuatro eventos remotos de tiempo real) |
+| Backend (xUnit) | 110 | Domain (entidades, validaciones, soft-delete, `LexoRankService`), Application (handlers CQRS con NSubstitute, incluida la regla "no borrar con tareas", el rebalanceo de `MoveTaskCommandHandler`, la notificación por tiempo real con exclusión del emisor, el conflicto de concurrencia `xmin`, la revocación de tokens en `LogoutCommandHandler` y `ExportProjectReportQueryHandler`), Infrastructure (BCrypt, JWT, `QuestPdfReportExporter` y `ClosedXmlReportExporter` releyendo el archivo generado) |
+| Frontend (Jasmine/Karma) | 62 | `ProjectService`, `ColumnService`, `TaskService` (incluido el header `X-Realtime-Connection-Id`), `BoardService`, `UserService`, `RealtimeBoardService`, `ReportService`, `AuthService` (revocación en logout), `AuthInterceptor`, `ProjectFormComponent`, `AppTopBarComponent`, `BoardComponent` (reordenamiento optimista y reversión, aplicación de los cuatro eventos remotos de tiempo real, y descarga de reportes) |
 
 Mínimo exigido por el enunciado (sección 6.9): 5 backend + 5 frontend. Superado en ambas capas.
 

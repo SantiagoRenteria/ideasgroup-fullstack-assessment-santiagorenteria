@@ -137,6 +137,8 @@ public interface IReportExporter
 
 El endpoint resuelve por inyección de `IEnumerable<IReportExporter>`, nunca por `if/switch` de formato — así, agregar un tercer formato es una clase nueva + un registro DI, sin tocar el endpoint ni las clases existentes. Content-Type explícito por formato (no `application/octet-stream` genérico). Nombre de archivo: `reporte-{proyecto}-{fecha}.{ext}`.
 
+**Nota (2026-08-02):** el mecanismo concreto de "una sola consulta EF" y el nombre final de la query se refinaron durante la implementación de la Fase 5 — ver §18.
+
 ---
 
 ## 6. Observabilidad
@@ -400,3 +402,15 @@ No exigido por el enunciado, pedido explícitamente durante la Fase 4 (mostrar e
 **Alternativa descartada — `localStorage`:** sobrevive incluso a cerrar y reabrir el navegador, la opción más cómoda para el usuario. Se descarta porque un token robado por XSS seguiría sirviendo indefinidamente (hasta su expiración natural) sin importar si la víctima cierra el navegador — una ventana de exposición mayor que no se justifica solo por comodidad, dado que igual hace falta el interceptor en ambos casos.
 
 **Alternativa descartada — mantener memoria pura:** es la opción más resistente a XSS (nada persiste nunca, ni siquiera dentro de la misma pestaña tras un F5), pero la fricción de UX (perder la sesión en cada recarga accidental) pesa más que esa ganancia marginal de seguridad para una aplicación de evaluación con 2 usuarios semilla — el propio enunciado no exige ningún nivel de persistencia de sesión, así que es una decisión de criterio, no de cumplimiento.
+
+---
+
+## 18. Exportación Dual — refinamiento del diseño al implementar (Fase 5, issue #16)
+
+§5 dejó el mecanismo de "una sola consulta EF" descrito a nivel de intención, sin especificar cómo encajaba con el patrón de puertos ya establecido en el resto del proyecto (`IProjectRepository`, `IColumnRepository`, `ITaskRepository`, todos con métodos que devuelven entidades de dominio, ninguno con un join agregado). Al implementar, esto exigió dos decisiones concretas que no estaban en §5:
+
+**1. Puerto de solo lectura dedicado — `IProjectReportRepository`.** El precedente más cercano (`GetProjectBoardQueryHandler`, Fase 3) dispara tres consultas separadas (proyecto, columnas, tareas) y las agrupa en memoria — no cumple el criterio literal de la issue #16 ("una sola consulta EF"). Se descartó extender `ITaskRepository` con un método de reporte (le agregaría una tercera responsabilidad a una interfaz que ya distingue explícitamente tracking-para-reordenar de solo-lectura-para-tablero) y se descartó inyectar `AppDbContext` directo en el handler (rompería el único invariante que sí se respeta en todo `Application/` hasta ahora: ningún handler referencia EF directamente). `IProjectReportRepository.GetReportAsync(projectId, ct)` vive junto a los demás repositorios en `Common/Interfaces/`, con un solo método.
+
+**2. La consulta arranca desde `Projects`, no desde `Tasks`.** La primera versión evaluada partía de `Tasks` con `join` hacia `Columns`/`Projects`/`Users` — pero un proyecto con cero tareas (columnas vacías, o incluso cero columnas) no produce ninguna fila, y eso es indistinguible de "el proyecto no existe" (ambos casos deben responder distinto: 404 vs. reporte vacío). La consulta final es un `LEFT JOIN` encadenado `Project -> Columns -> Tasks -> User`, con `DefaultIfEmpty()` en cada salto: garantiza al menos una fila por proyecto existente (con los campos de tarea en `null` si no hay tareas), y cero filas solo si el proyecto no existe. Verificado contra Postgres real (no solo compilación): EF Core 8 traduce el chain completo a un único `SELECT ... FROM projects LEFT JOIN (...) LEFT JOIN (...) LEFT JOIN users ...` que respeta los `HasQueryFilter` de soft-delete sin repetirlos a mano.
+
+**3. `ExportProjectReportQuery` (no `GetProjectReportQuery`) es el único query — sin separar "obtener DTO" de "exportar".** Aunque "exportar" parece una acción, no muta estado persistente (no hay `SaveChangesAsync`), así que cae del lado Query de CQRS por definición — la frontera es "¿muta estado?", no "¿hace trabajo?". El handler es el único orquestador: pide el DTO al repositorio, resuelve el `IReportExporter` por `Format` (`OrdinalIgnoreCase`, sin `if/switch`), y estampa `GeneratedAt = DateTime.UtcNow` (no es dato persistido, no le corresponde al repositorio). No se creó un `GetProjectReportQuery` previo y separado porque nada en las issues #16-#19 lo necesita — habría sido código sin consumidor (YAGNI). Los `IReportExporter` (`QuestPdfReportExporter`, `ClosedXmlReportExporter`) no pasan por el pipeline de MediatR: son transformaciones puras `DTO -> bytes`, resueltas por DI directo en el handler, no comandos ni queries por sí mismos.

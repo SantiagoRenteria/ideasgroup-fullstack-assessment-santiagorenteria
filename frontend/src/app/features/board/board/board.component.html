@@ -3,6 +3,27 @@
 
 <div class="board-header flex justify-content-between align-items-center mb-4 gap-2 flex-wrap">
     <h5 class="m-0">{{ board?.projectName ?? 'Tablero' }}</h5>
+
+    <div class="flex gap-2" *ngIf="board">
+        <button
+            pButton
+            type="button"
+            icon="pi pi-file-pdf"
+            label="Reporte PDF"
+            class="p-button-outlined p-button-sm"
+            [loading]="downloadingReport === 'pdf'"
+            (click)="downloadReport('pdf')"
+        ></button>
+        <button
+            pButton
+            type="button"
+            icon="pi pi-file-excel"
+            label="Reporte Excel"
+            class="p-button-outlined p-button-sm"
+            [loading]="downloadingReport === 'excel'"
+            (click)="downloadReport('excel')"
+        ></button>
+    </div>
 </div>
 
 <div class="board-columns" cdkDropListGroup *ngIf="board">

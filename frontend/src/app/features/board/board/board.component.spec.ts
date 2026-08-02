@@ -8,6 +8,7 @@ import { Board } from '../models/board.model';
 import { BoardTask, TaskPriority } from '../models/task.model';
 import { BoardService } from '../services/board.service';
 import { RealtimeBoardService, TaskDeletedPayload, TaskMovedPayload } from '../services/realtime-board.service';
+import { ReportService } from '../services/report.service';
 import { TaskService } from '../services/task.service';
 import { BoardComponent } from './board.component';
 
@@ -16,6 +17,7 @@ describe('BoardComponent', () => {
     let fixture: ComponentFixture<BoardComponent>;
     let boardService: jasmine.SpyObj<BoardService>;
     let taskService: jasmine.SpyObj<TaskService>;
+    let reportService: jasmine.SpyObj<ReportService>;
     let taskCreated$: Subject<BoardTask>;
     let taskUpdated$: Subject<BoardTask>;
     let taskDeleted$: Subject<TaskDeletedPayload>;
@@ -39,6 +41,7 @@ describe('BoardComponent', () => {
     beforeEach(async () => {
         boardService = jasmine.createSpyObj('BoardService', ['getByProject']);
         taskService = jasmine.createSpyObj('TaskService', ['move', 'delete']);
+        reportService = jasmine.createSpyObj('ReportService', ['download']);
         boardService.getByProject.and.returnValue(of(buildBoard()));
 
         taskCreated$ = new Subject<BoardTask>();
@@ -61,6 +64,7 @@ describe('BoardComponent', () => {
             providers: [
                 { provide: BoardService, useValue: boardService },
                 { provide: TaskService, useValue: taskService },
+                { provide: ReportService, useValue: reportService },
                 { provide: RealtimeBoardService, useValue: realtimeService },
                 { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ projectId: 'proj-1' }) } } },
                 ConfirmationService,
@@ -200,6 +204,34 @@ describe('BoardComponent', () => {
 
         expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t2']);
         expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t1', 't3']);
+    });
+
+    it('downloadReport pide el reporte en el formato solicitado y dispara la descarga', () => {
+        fixture.detectChanges();
+        const blob = new Blob(['contenido']);
+        reportService.download.and.returnValue(of({ blob, fileName: 'reporte-demo.pdf' }));
+        spyOn(component as any, 'triggerDownload');
+
+        component.downloadReport('pdf');
+
+        expect(reportService.download).toHaveBeenCalledWith('proj-1', 'pdf');
+        expect((component as any).triggerDownload).toHaveBeenCalledWith(blob, 'reporte-demo.pdf');
+        expect(component.downloadingReport).toBeNull();
+    });
+
+    it('downloadReport muestra un error si la descarga falla, sin dejar el boton en estado de carga', () => {
+        fixture.detectChanges();
+        reportService.download.and.returnValue(throwError(() => new Error('fallo de red')));
+        // MessageService esta declarado como provider a nivel de componente (ver el mismo
+        // comentario en el test de confirmDelete), asi que hay que resolverlo desde el
+        // injector del propio componente para interceptar la misma instancia.
+        const messageService = fixture.debugElement.injector.get(MessageService);
+        spyOn(messageService, 'add');
+
+        component.downloadReport('excel');
+
+        expect(component.downloadingReport).toBeNull();
+        expect(messageService.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'error' }));
     });
 
     it('ngOnDestroy deja el tablero y cierra la conexion de tiempo real', () => {
