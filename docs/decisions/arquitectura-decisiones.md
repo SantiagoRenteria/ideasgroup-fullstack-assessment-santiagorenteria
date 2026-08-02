@@ -440,6 +440,48 @@ Auditoría contra el checklist de `docs/METODOLOGIA.md` §9.3 encontró 2 de 4 p
 
 ---
 
+## 22. Auditoría post-entrega — Value Objects y límites de agregado (fix/value-objects-and-aggregates)
+
+Tercero de los 5 hallazgos de la auditoría crítica (ver §20, §21). A diferencia de los dos anteriores, este no es un fix acotado a un archivo: toca las cuatro entidades de dominio, la configuración de EF Core y el límite de los agregados. Se documenta explícitamente como **corrección de deuda técnica tras una primera instancia ya validada** — el producto funcionaba de punta a punta (Fases 0-7, §1-§21) antes de esta revisión; esta entrada no es un rediseño especulativo, es el mismo criterio de "primero funciona, después se refina con la información completa del sistema real" que ya se aplicó en §14.2 (xmin diferido) y §15.2 (xmin materializado cuando el escenario real lo exigió).
+
+### 22.1 Ausencia total de Value Objects — el hallazgo original
+
+Con 4 entidades de dominio y el criterio ya aplicado de "sin dependencias innecesarias" (§1, descarte de AutoMapper), el proyecto nunca había introducido un Value Object propio. Tres primitivos concretos escondían invariantes reales:
+
+- `User.Email`: un `string` normalizado (trim + lowercase) inline en el constructor, sin validación de formato -- cualquier string no vacío pasaba como "correo válido".
+- `Project.StartDate`/`EndDate`: la invariante "End >= Start" estaba **copiada literalmente** en el constructor y en `Update()` -- duplicación real, no cosmética.
+- `TaskEntity.Order` (LexoRank): solo validaba "no vacío" -- cualquier string pasaba como clave de orden válida, y cada consumidor debía recordar usar `StringComparer.Ordinal` para compararlas correctamente en vez de que el tipo lo garantizara.
+
+### 22.2 Los tres Value Objects introducidos
+
+`Domain/ValueObjects/Email.cs`, `DateRange.cs`, `LexoRankKey.cs` -- todos `sealed record` (igualdad estructural gratis), cada uno centraliza la validación que antes vivía repetida o ausente:
+
+- **`Email`**: valida formato (`^[^@\s]+@[^@\s]+\.[^@\s]+$`) además de normalizar. `User` construye el VO en su constructor; `IUserRepository.GetByEmailAsync` pasa a aceptar `Email` en vez de `string` -- el puerto ahora exige un correo ya validado, no un string arbitrario. Esto es seguro porque `LoginCommandValidator` (FluentValidation, `.EmailAddress()`) ya garantiza formato válido antes de que el Handler construya el VO; un formato inválido nunca llega a intentar construir un `Email` en producción.
+- **`DateRange`**: centraliza la invariante que antes estaba duplicada. `Project` expone `DateRange` como propiedad **derivada** (`=> new(StartDate, EndDate)`), no como columna propia -- ver §22.4 sobre por qué no se usó `ComplexProperty`.
+- **`LexoRankKey`**: valida el alfabeto base62 (vía `LexoRankService.IsValidCharacter`, expuesto `internal` sin tocar el algoritmo ya probado por la única prueba nombrada explícitamente en el enunciado, sección 6.9) e implementa `IComparable<LexoRankKey>` con comparación ordinal -- los consumidores (`GetProjectBoardQueryHandler`) ya no necesitan recordar `StringComparer.Ordinal`, el tipo lo garantiza.
+
+### 22.3 Límite de agregados -- el hallazgo más importante de los tres
+
+`Project` exponía `Columns` y `Column` exponía `Tasks` como colecciones navegables -- decoración heredada de "consistencia de patrón" (§14.3), nunca usada por ningún Handler de Application (verificado por grep: ni las queries ni los commands navegan `project.Columns` o `column.Tasks`; `GetProjectBoardQueryHandler` arma el árbol manualmente vía `ToLookup` desde sus propios repositorios). Mientras tanto, `Column` y `TaskEntity` ya tenían repositorio propio y `TaskEntity` ya tenía su propio token de concurrencia (`xmin`, §15.2) -- el código ya se comportaba como **tres agregados independientes**, pero el modelo de objetos fingía ser **un solo agregado** navegable desde `Project`.
+
+**Alternativa evaluada y descartada -- colapsar a un solo agregado real (Project como raíz única):** habría significado que `Column`/`TaskEntity` pierdan su repositorio propio, y que un único `xmin` en `Project` proteja todo el árbol. Se descartó porque **rompería la edición concurrente de grano fino que 6.6/6.7 exige probar**: con un solo token de concurrencia por proyecto, dos usuarios moviendo tareas *distintas* del mismo proyecto competirían por el mismo `xmin` y generarían un conflicto de concurrencia falso -- el escenario de colaboración simultánea que el propio enunciado pide validar dejaría de funcionar como corresponde. Aplicar DDD "de libro" sin considerar que este sistema necesita mutaciones concurrentes de grano fino habría sido el tipo de sobre-ingeniería que este proyecto evita consistentemente en otras decisiones (§1).
+
+**Decisión:** se quitaron `Project.Columns` y `Column.Tasks` del dominio (nunca se usaron) y se reconfiguró la relación FK en EF Core como unidireccional (`HasOne<Project>().WithMany()`, sin navegación) -- el modelo de objetos ahora refleja honestamente lo que la persistencia ya hacía. `Project`, `Column` y `TaskEntity` quedan documentados explícitamente como **tres agregados independientes**, cada uno con su propio repositorio y su propio límite de concurrencia, decisión consciente para preservar la edición concurrente de grano fino.
+
+### 22.4 Detalle no obvio -- `ComplexProperty` (EF Core 8) no soporta `HasData`
+
+El primer intento de mapear `DateRange` fue `builder.ComplexProperty(p => p.DateRange, ...)`, la forma idiomática de EF Core 8 para Value Objects sin identidad ni tabla propia. Falló en tiempo de diseño: *"Complex properties are currently not supported in seeding"* ([dotnet/efcore#31254](https://github.com/dotnet/efcore/issues/31254)), y el enunciado (sección 6.2) exige migración semilla -- no es una opción descartable.
+
+**Decisión:** `Project.StartDate`/`EndDate` siguen siendo las columnas planas mapeadas de siempre; `DateRange` es una propiedad derivada de solo lectura (`=> new(StartDate, EndDate)`), ignorada explícitamente por EF (`builder.Ignore(p => p.DateRange)`). El VO sigue centralizando la validación (el constructor y `Update()` de `Project` construyen un `DateRange` transitorio solo para validar, antes de asignar `StartDate`/`EndDate`), pero la persistencia no cambia. Corolario verificado: por ser una propiedad C# calculada, `DateRange` **no es traducible a SQL** -- `ProjectReportRepository` (la consulta LEFT JOIN de §18) debe seguir proyectando `p.StartDate`/`p.EndDate` directamente, nunca `p.DateRange.Start`, o EF lanza en tiempo de ejecución al no poder traducir la expresión.
+
+`Email` y `LexoRankKey`, en cambio, sí usan `HasConversion` (VO de una sola propiedad, sin este problema) -- `HasConversion` sí soporta `HasData` con normalidad, verificado por la migración de comprobación (`CheckValueObjectsMapping`) generada sin error.
+
+### 22.5 Verificación real, no solo unitaria
+
+Los mocks de repositorio en los tests unitarios nunca ejercitan el modelo real de EF Core. Antes de cerrar este punto, se levantó el stack completo (`docker compose up`) contra Postgres real y se verificó con `curl`: login (`Email` VO + JWT), listado y tablero de un proyecto real (`DateRange` + `LexoRankKey` serializados correctamente), mover una tarea (recalcula una `LexoRankKey` nueva, respeta `xmin`), creación de proyecto con nombre duplicado (409, `ErrorType.Conflict`) y login con contraseña incorrecta (401, `ErrorType.Unauthorized`) -- confirmando que el límite de agregados independientes no rompió el ensamblado del tablero (`GetProjectBoardQueryHandler` sigue construyendo el árbol sin la navegación eliminada) y que la migración de verificación (`CheckValueObjectsMapping`, `Up`/`Down` vacíos -- mismo patrón que la migración vacía de `xmin`, §15.2) se aplica sin error sobre una base de datos real.
+
+---
+
 ## 20. Auditoría post-entrega — Result tipado por ErrorType (fix/typed-result-errors)
 
 Auditoría crítica solicitada explícitamente por Santiago sobre el proyecto ya completo (2026-08-02), pidiendo una revisión de evaluador senior, no de instructor. Se identificaron 5 hallazgos priorizados de más sencillo a más difícil; esta entrada documenta el primero, ya cerrado. Los otros 4 (logging pipeline behavior, Value Object `Email`, tests de integración con Testcontainers, Outbox pattern para la notificación del tablero) se documentan en sus propias entradas al implementarse.
