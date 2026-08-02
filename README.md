@@ -170,7 +170,11 @@ Detalle completo, incluida la justificación de por qué la consulta arranca des
 
 ## 9. Diagrama de base de datos
 
-**Pendiente (Fase 6).** El modelo ya está estable desde el cierre de la Fase 3 (`users`, `projects`, `columns`, `tasks` con su CRUD completo); se genera como imagen PNG desde el esquema real de las migraciones incrementales en `backend/src/Infrastructure/GestionProyectos.Infrastructure/Persistence/Migrations/`.
+![Diagrama entidad-relación](docs/diagrams/erd.png)
+
+Generado por introspección directa de `information_schema` contra el Postgres real levantado con `docker compose` (no a mano ni desde memoria del código) — columnas, tipos, claves primarias/foráneas e índices únicos consultados con SQL, volcados a `docs/diagrams/erd.mmd` (Mermaid ER) y renderizados a PNG con `@mermaid-js/mermaid-cli`. `revoked_tokens` es la única tabla sin relación con el resto: blocklist de JWT (§16 del ADR), no forma parte del modelo de dominio de la sección 5 del enunciado, pero es una tabla real de las migraciones y se incluye por fidelidad al esquema.
+
+Migraciones incrementales que generan este esquema: `backend/src/Infrastructure/GestionProyectos.Infrastructure/Persistence/Migrations/`.
 
 ---
 
