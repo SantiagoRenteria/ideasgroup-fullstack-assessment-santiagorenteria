@@ -41,6 +41,7 @@ public static class DependencyInjection
         // Singleton: sin estado ni dependencias, son transformaciones puras DTO -> bytes
         // (mismo criterio que IPasswordHasher/IJwtTokenGenerator, mas abajo).
         services.AddSingleton<IReportExporter, QuestPdfReportExporter>();
+        services.AddSingleton<IReportExporter, ClosedXmlReportExporter>();
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IBoardNotifier, SignalRBoardNotifier>();
