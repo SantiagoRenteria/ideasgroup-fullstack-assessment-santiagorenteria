@@ -1,11 +1,13 @@
 using GestionProyectos.Domain.Enums;
+using GestionProyectos.Domain.ValueObjects;
 
 namespace GestionProyectos.Domain.Entities;
 
+// Agregado independiente (no raiz de un agregado que incluya Column/TaskEntity): cada uno
+// tiene su propio repositorio y su propio limite de concurrencia -- ver
+// arquitectura-decisiones.md §22. Por eso no expone una coleccion Columns navegable.
 public class Project
 {
-    private readonly List<Column> _columns = [];
-
     public Guid Id { get; private set; }
     public string Name { get; private set; } = null!;
     public string Description { get; private set; } = null!;
@@ -14,7 +16,12 @@ public class Project
     public ProjectStatus Status { get; private set; }
     public bool IsDeleted { get; private set; }
     public DateTime? DeletedAt { get; private set; }
-    public IReadOnlyCollection<Column> Columns => _columns.AsReadOnly();
+
+    // Derivada de solo lectura, no mapeada por EF Core (Ignore en ProjectConfiguration):
+    // EF Core 8 ComplexProperty no soporta HasData todavia (dotnet/efcore#31254), asi que
+    // start_date/end_date siguen siendo columnas planas -- ver arquitectura-decisiones.md §22.
+    // El VO igual centraliza la invariante "End >= Start" en el constructor y en Update().
+    public DateRange DateRange => new(StartDate, EndDate);
 
     private Project() { }
 
@@ -32,14 +39,13 @@ public class Project
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("La descripcion del proyecto es obligatoria.", nameof(description));
 
-        if (endDate < startDate)
-            throw new ArgumentException("La fecha de fin prevista no puede ser anterior a la fecha de inicio.", nameof(endDate));
+        var dateRange = new DateRange(startDate, endDate);
 
         Id = id;
         Name = name;
         Description = description;
-        StartDate = startDate;
-        EndDate = endDate;
+        StartDate = dateRange.Start;
+        EndDate = dateRange.End;
         Status = status;
     }
 
@@ -51,13 +57,12 @@ public class Project
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("La descripcion del proyecto es obligatoria.", nameof(description));
 
-        if (endDate < startDate)
-            throw new ArgumentException("La fecha de fin prevista no puede ser anterior a la fecha de inicio.", nameof(endDate));
+        var dateRange = new DateRange(startDate, endDate);
 
         Name = name;
         Description = description;
-        StartDate = startDate;
-        EndDate = endDate;
+        StartDate = dateRange.Start;
+        EndDate = dateRange.End;
         Status = status;
     }
 

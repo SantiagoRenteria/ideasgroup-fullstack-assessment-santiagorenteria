@@ -1,10 +1,12 @@
 using GestionProyectos.Domain.Enums;
+using GestionProyectos.Domain.ValueObjects;
 
 namespace GestionProyectos.Domain.Entities;
 
 // Nombrada TaskEntity (no Task) para evitar colision con System.Threading.Tasks.Task,
 // que aparece en la firma de practicamente todo metodo async del proyecto.
 // Convencion documentada en docs/METODOLOGIA.md §7.1.
+// Agregado independiente de Column y de Project -- ver arquitectura-decisiones.md §22.
 public class TaskEntity
 {
     public Guid Id { get; private set; }
@@ -13,7 +15,7 @@ public class TaskEntity
     public string Description { get; private set; } = null!;
     public TaskPriority Priority { get; private set; }
     public Guid? AssigneeId { get; private set; }
-    public string Order { get; private set; } = null!;
+    public LexoRankKey Order { get; private set; } = null!;
     public DateTime CreatedAt { get; private set; }
     public bool IsDeleted { get; private set; }
     public DateTime? DeletedAt { get; private set; }
@@ -39,16 +41,13 @@ public class TaskEntity
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("La descripcion de la tarea es obligatoria.", nameof(description));
 
-        if (string.IsNullOrWhiteSpace(order))
-            throw new ArgumentException("El orden de la tarea es obligatorio.", nameof(order));
-
         Id = id;
         ColumnId = columnId;
         Title = title;
         Description = description;
         Priority = priority;
         AssigneeId = assigneeId;
-        Order = order;
+        Order = new LexoRankKey(order);
         CreatedAt = createdAt;
     }
 
@@ -74,11 +73,8 @@ public class TaskEntity
         if (columnId == Guid.Empty)
             throw new ArgumentException("La tarea debe pertenecer a una columna.", nameof(columnId));
 
-        if (string.IsNullOrWhiteSpace(order))
-            throw new ArgumentException("El orden de la tarea es obligatorio.", nameof(order));
-
         ColumnId = columnId;
-        Order = order;
+        Order = new LexoRankKey(order);
     }
 
     public void Delete()
