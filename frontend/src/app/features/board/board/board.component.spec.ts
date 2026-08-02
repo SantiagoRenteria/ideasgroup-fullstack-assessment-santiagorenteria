@@ -296,17 +296,56 @@ describe('BoardComponent', () => {
         component.filterAssigneeId = null;
         component.filterPriority = TaskPriority.High;
         expect(component.isFiltering).toBeTrue();
+
+        component.filterPriority = null;
+        component.searchText = 'wireframes';
+        expect(component.isFiltering).toBeTrue();
+
+        component.searchText = '   ';
+        expect(component.isFiltering).toBeFalse();
     });
 
-    it('clearFilters limpia ambos filtros', () => {
+    it('clearFilters limpia responsable, prioridad y busqueda', () => {
         component.filterAssigneeId = 'user-1';
         component.filterPriority = TaskPriority.High;
+        component.searchText = 'wireframes';
 
         component.clearFilters();
 
         expect(component.filterAssigneeId).toBeNull();
         expect(component.filterPriority).toBeNull();
+        expect(component.searchText).toBe('');
         expect(component.isFiltering).toBeFalse();
+    });
+
+    it('getVisibleTasks (deseable seccion 7) filtra por texto en titulo o descripcion, sin distinguir mayusculas', () => {
+        fixture.detectChanges();
+        const column = component.board!.columns[0];
+        column.tasks = [
+            { ...createTask('t1', column.id, 'a'), title: 'Diseñar wireframes', description: 'Bocetos iniciales' },
+            { ...createTask('t2', column.id, 'b'), title: 'Definir alcance', description: 'incluye WIREFRAMES tambien' },
+            { ...createTask('t3', column.id, 'c'), title: 'Otra tarea', description: 'sin relacion' }
+        ];
+        component.searchText = 'WireFrames';
+
+        const visible = component.getVisibleTasks(column);
+
+        expect(visible.map((t) => t.id)).toEqual(['t1', 't2']);
+    });
+
+    it('getVisibleTasks combina busqueda de texto con los demas filtros', () => {
+        fixture.detectChanges();
+        const column = component.board!.columns[0];
+        column.tasks = [
+            { ...createTask('t1', column.id, 'a', TaskPriority.High, 'user-1'), title: 'Diseñar wireframes', description: '' },
+            { ...createTask('t2', column.id, 'b', TaskPriority.Low, 'user-1'), title: 'Diseñar wireframes', description: '' }
+        ];
+        component.searchText = 'wireframes';
+        component.filterPriority = TaskPriority.High;
+
+        const visible = component.getVisibleTasks(column);
+
+        expect(visible.map((t) => t.id)).toEqual(['t1']);
     });
 
     it('un BoardPresenceChanged recibido por el canal actualiza la lista de conectados', () => {
