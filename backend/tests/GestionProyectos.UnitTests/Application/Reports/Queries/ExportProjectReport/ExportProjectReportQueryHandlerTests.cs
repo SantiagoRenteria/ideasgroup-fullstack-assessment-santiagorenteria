@@ -2,6 +2,7 @@ using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Reports;
 using GestionProyectos.Application.Reports.Queries.ExportProjectReport;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -23,7 +24,7 @@ public class ExportProjectReportQueryHandlerTests
     {
         _reportRepository.GetReportAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<TaskPriority?>(), Arg.Any<CancellationToken>())
             .Returns((ProjectReportDto?)null);
-        var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter });
+        var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter }, NullLogger<ExportProjectReportQueryHandler>.Instance);
 
         var result = await handler.Handle(new ExportProjectReportQuery(Guid.NewGuid(), "pdf"), CancellationToken.None);
 
@@ -38,7 +39,7 @@ public class ExportProjectReportQueryHandlerTests
         _reportRepository.GetReportAsync(projectId, Arg.Any<Guid?>(), Arg.Any<TaskPriority?>(), Arg.Any<CancellationToken>())
             .Returns(BuildReport(projectId));
         _pdfExporter.Format.Returns("pdf");
-        var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter });
+        var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter }, NullLogger<ExportProjectReportQueryHandler>.Instance);
 
         var result = await handler.Handle(new ExportProjectReportQuery(projectId, "excel"), CancellationToken.None);
 
@@ -57,7 +58,7 @@ public class ExportProjectReportQueryHandlerTests
         _pdfExporter.FileExtension.Returns("pdf");
         ProjectReportDto? passedReport = null;
         _pdfExporter.Export(Arg.Do<ProjectReportDto>(r => passedReport = r)).Returns(new byte[] { 1, 2, 3 });
-        var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter });
+        var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter }, NullLogger<ExportProjectReportQueryHandler>.Instance);
 
         var result = await handler.Handle(new ExportProjectReportQuery(projectId, "PDF"), CancellationToken.None);
 
@@ -83,7 +84,7 @@ public class ExportProjectReportQueryHandlerTests
             .Returns(BuildReport(projectId));
         _pdfExporter.Format.Returns("pdf");
         _pdfExporter.Export(Arg.Any<ProjectReportDto>()).Returns(new byte[] { 1 });
-        var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter });
+        var handler = new ExportProjectReportQueryHandler(_reportRepository, new[] { _pdfExporter }, NullLogger<ExportProjectReportQueryHandler>.Instance);
 
         var result = await handler.Handle(new ExportProjectReportQuery(projectId, "pdf", assigneeId, TaskPriority.Urgent), CancellationToken.None);
 

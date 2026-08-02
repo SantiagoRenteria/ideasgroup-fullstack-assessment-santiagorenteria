@@ -2,6 +2,7 @@ using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Projects.Commands.CreateProject;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -15,7 +16,7 @@ public class CreateProjectCommandHandlerTests
     [Fact]
     public async Task Handle_ConDatosValidos_CreaProyectoYPersisteCambios()
     {
-        var handler = new CreateProjectCommandHandler(_projectRepository, _unitOfWork);
+        var handler = new CreateProjectCommandHandler(_projectRepository, _unitOfWork, NullLogger<CreateProjectCommandHandler>.Instance);
         var command = new CreateProjectCommand(
             "Migracion ERP", "Descripcion", new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30), ProjectStatus.Planned);
 
@@ -32,7 +33,7 @@ public class CreateProjectCommandHandlerTests
     {
         _projectRepository.ExistsByNameAsync("Migracion ERP", null, Arg.Any<CancellationToken>()).Returns(true);
 
-        var handler = new CreateProjectCommandHandler(_projectRepository, _unitOfWork);
+        var handler = new CreateProjectCommandHandler(_projectRepository, _unitOfWork, NullLogger<CreateProjectCommandHandler>.Instance);
         var command = new CreateProjectCommand(
             "Migracion ERP", "Descripcion", new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30), ProjectStatus.Planned);
 

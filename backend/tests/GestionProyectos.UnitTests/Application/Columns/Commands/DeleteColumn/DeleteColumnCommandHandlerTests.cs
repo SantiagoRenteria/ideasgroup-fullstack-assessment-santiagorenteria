@@ -1,6 +1,7 @@
 using GestionProyectos.Application.Columns.Commands.DeleteColumn;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Entities;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -18,7 +19,7 @@ public class DeleteColumnCommandHandlerTests
         _columnRepository.GetByIdAsync(column.Id, Arg.Any<CancellationToken>()).Returns(column);
         _columnRepository.HasTasksAsync(column.Id, Arg.Any<CancellationToken>()).Returns(false);
 
-        var handler = new DeleteColumnCommandHandler(_columnRepository, _unitOfWork);
+        var handler = new DeleteColumnCommandHandler(_columnRepository, _unitOfWork, NullLogger<DeleteColumnCommandHandler>.Instance);
 
         var result = await handler.Handle(new DeleteColumnCommand(column.Id), CancellationToken.None);
 
@@ -36,7 +37,7 @@ public class DeleteColumnCommandHandlerTests
         _columnRepository.GetByIdAsync(column.Id, Arg.Any<CancellationToken>()).Returns(column);
         _columnRepository.HasTasksAsync(column.Id, Arg.Any<CancellationToken>()).Returns(true);
 
-        var handler = new DeleteColumnCommandHandler(_columnRepository, _unitOfWork);
+        var handler = new DeleteColumnCommandHandler(_columnRepository, _unitOfWork, NullLogger<DeleteColumnCommandHandler>.Instance);
 
         var result = await handler.Handle(new DeleteColumnCommand(column.Id), CancellationToken.None);
 
@@ -51,7 +52,7 @@ public class DeleteColumnCommandHandlerTests
     {
         _columnRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((Column?)null);
 
-        var handler = new DeleteColumnCommandHandler(_columnRepository, _unitOfWork);
+        var handler = new DeleteColumnCommandHandler(_columnRepository, _unitOfWork, NullLogger<DeleteColumnCommandHandler>.Instance);
 
         var result = await handler.Handle(new DeleteColumnCommand(Guid.NewGuid()), CancellationToken.None);
 

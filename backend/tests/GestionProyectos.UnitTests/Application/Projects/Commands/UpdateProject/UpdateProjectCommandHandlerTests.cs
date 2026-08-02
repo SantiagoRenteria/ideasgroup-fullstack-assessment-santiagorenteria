@@ -2,6 +2,7 @@ using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Projects.Commands.UpdateProject;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -20,7 +21,7 @@ public class UpdateProjectCommandHandlerTests
             new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30), ProjectStatus.Planned);
         _projectRepository.GetByIdAsync(project.Id, Arg.Any<CancellationToken>()).Returns(project);
 
-        var handler = new UpdateProjectCommandHandler(_projectRepository, _unitOfWork);
+        var handler = new UpdateProjectCommandHandler(_projectRepository, _unitOfWork, NullLogger<UpdateProjectCommandHandler>.Instance);
         var command = new UpdateProjectCommand(
             project.Id, "Nombre nuevo", "Descripcion nueva",
             new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), ProjectStatus.InProgress);
@@ -38,7 +39,7 @@ public class UpdateProjectCommandHandlerTests
     {
         _projectRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((Project?)null);
 
-        var handler = new UpdateProjectCommandHandler(_projectRepository, _unitOfWork);
+        var handler = new UpdateProjectCommandHandler(_projectRepository, _unitOfWork, NullLogger<UpdateProjectCommandHandler>.Instance);
         var command = new UpdateProjectCommand(
             Guid.NewGuid(), "Nombre", "Descripcion",
             new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30), ProjectStatus.Planned);
@@ -59,7 +60,7 @@ public class UpdateProjectCommandHandlerTests
         _projectRepository.GetByIdAsync(project.Id, Arg.Any<CancellationToken>()).Returns(project);
         _projectRepository.ExistsByNameAsync("Nombre en uso", project.Id, Arg.Any<CancellationToken>()).Returns(true);
 
-        var handler = new UpdateProjectCommandHandler(_projectRepository, _unitOfWork);
+        var handler = new UpdateProjectCommandHandler(_projectRepository, _unitOfWork, NullLogger<UpdateProjectCommandHandler>.Instance);
         var command = new UpdateProjectCommand(
             project.Id, "Nombre en uso", "Descripcion",
             new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30), ProjectStatus.Planned);

@@ -1,6 +1,7 @@
 using GestionProyectos.Application.Columns.Commands.UpdateColumn;
 using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Domain.Entities;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -17,7 +18,7 @@ public class UpdateColumnCommandHandlerTests
         var column = new Column(Guid.NewGuid(), Guid.NewGuid(), "Por hacer", 0);
         _columnRepository.GetByIdAsync(column.Id, Arg.Any<CancellationToken>()).Returns(column);
 
-        var handler = new UpdateColumnCommandHandler(_columnRepository, _unitOfWork);
+        var handler = new UpdateColumnCommandHandler(_columnRepository, _unitOfWork, NullLogger<UpdateColumnCommandHandler>.Instance);
 
         var result = await handler.Handle(new UpdateColumnCommand(column.Id, "En progreso", 2), CancellationToken.None);
 
@@ -31,7 +32,7 @@ public class UpdateColumnCommandHandlerTests
     {
         _columnRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((Column?)null);
 
-        var handler = new UpdateColumnCommandHandler(_columnRepository, _unitOfWork);
+        var handler = new UpdateColumnCommandHandler(_columnRepository, _unitOfWork, NullLogger<UpdateColumnCommandHandler>.Instance);
 
         var result = await handler.Handle(new UpdateColumnCommand(Guid.NewGuid(), "Nombre", 0), CancellationToken.None);
 

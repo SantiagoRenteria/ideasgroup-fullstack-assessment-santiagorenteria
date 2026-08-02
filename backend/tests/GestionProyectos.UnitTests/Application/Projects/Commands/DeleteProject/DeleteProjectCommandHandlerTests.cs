@@ -2,6 +2,7 @@ using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Projects.Commands.DeleteProject;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -34,7 +35,7 @@ public class DeleteProjectCommandHandlerTests
         _projectRepository.GetByIdAsync(project.Id, Arg.Any<CancellationToken>()).Returns(project);
         _columnRepository.ProjectHasTasksAsync(project.Id, Arg.Any<CancellationToken>()).Returns(false);
 
-        var handler = new DeleteProjectCommandHandler(_projectRepository, _columnRepository, _unitOfWork);
+        var handler = new DeleteProjectCommandHandler(_projectRepository, _columnRepository, _unitOfWork, NullLogger<DeleteProjectCommandHandler>.Instance);
 
         var result = await handler.Handle(new DeleteProjectCommand(project.Id), CancellationToken.None);
 
@@ -54,7 +55,7 @@ public class DeleteProjectCommandHandlerTests
         _projectRepository.GetByIdAsync(project.Id, Arg.Any<CancellationToken>()).Returns(project);
         _columnRepository.ProjectHasTasksAsync(project.Id, Arg.Any<CancellationToken>()).Returns(true);
 
-        var handler = new DeleteProjectCommandHandler(_projectRepository, _columnRepository, _unitOfWork);
+        var handler = new DeleteProjectCommandHandler(_projectRepository, _columnRepository, _unitOfWork, NullLogger<DeleteProjectCommandHandler>.Instance);
 
         var result = await handler.Handle(new DeleteProjectCommand(project.Id), CancellationToken.None);
 
@@ -70,7 +71,7 @@ public class DeleteProjectCommandHandlerTests
     {
         _projectRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((Project?)null);
 
-        var handler = new DeleteProjectCommandHandler(_projectRepository, _columnRepository, _unitOfWork);
+        var handler = new DeleteProjectCommandHandler(_projectRepository, _columnRepository, _unitOfWork, NullLogger<DeleteProjectCommandHandler>.Instance);
 
         var result = await handler.Handle(new DeleteProjectCommand(Guid.NewGuid()), CancellationToken.None);
 

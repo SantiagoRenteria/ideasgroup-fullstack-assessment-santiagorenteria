@@ -2,6 +2,7 @@ using GestionProyectos.Application.Common.Interfaces;
 using GestionProyectos.Application.Projects.Queries.GetProjectById;
 using GestionProyectos.Domain.Entities;
 using GestionProyectos.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -19,7 +20,7 @@ public class GetProjectByIdQueryHandlerTests
             new DateOnly(2026, 1, 1), new DateOnly(2026, 6, 30), ProjectStatus.Planned);
         _projectRepository.GetByIdAsync(project.Id, Arg.Any<CancellationToken>()).Returns(project);
 
-        var handler = new GetProjectByIdQueryHandler(_projectRepository);
+        var handler = new GetProjectByIdQueryHandler(_projectRepository, NullLogger<GetProjectByIdQueryHandler>.Instance);
 
         var result = await handler.Handle(new GetProjectByIdQuery(project.Id), CancellationToken.None);
 
@@ -32,7 +33,7 @@ public class GetProjectByIdQueryHandlerTests
     {
         _projectRepository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((Project?)null);
 
-        var handler = new GetProjectByIdQueryHandler(_projectRepository);
+        var handler = new GetProjectByIdQueryHandler(_projectRepository, NullLogger<GetProjectByIdQueryHandler>.Instance);
 
         var result = await handler.Handle(new GetProjectByIdQuery(Guid.NewGuid()), CancellationToken.None);
 
