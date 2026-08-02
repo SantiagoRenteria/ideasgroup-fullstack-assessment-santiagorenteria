@@ -1,0 +1,24 @@
+// _topbar.scss (tema Sakai) oculta el <span> de texto de .layout-topbar-button en
+// escritorio a proposito (son botones de solo icono en ese ancho, ej. Calendar) -- por
+// eso el nombre de usuario y "Cerrar sesion" nunca se veian fuera del menu mobile.
+// Estos dos elementos son la excepcion: deben ser siempre legibles, no solo iconos.
+.layout-topbar-user,
+.layout-topbar-logout {
+    span {
+        display: inline-flex !important;
+    }
+}
+
+.layout-topbar-user {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: 1rem;
+    color: var(--text-color-secondary);
+    font-size: 1rem;
+    white-space: nowrap;
+
+    i {
+        font-size: 1.25rem;
+    }
+}
