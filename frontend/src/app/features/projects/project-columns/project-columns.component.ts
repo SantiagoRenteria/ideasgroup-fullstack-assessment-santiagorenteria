@@ -107,13 +107,12 @@ export class ProjectColumnsComponent implements OnChanges {
                 this.columns = this.columns.filter((c) => c.id !== column.id);
                 this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Columna eliminada' });
             },
-            error: (err) => {
-                const detail =
-                    err.status === 409
-                        ? 'No se puede eliminar una columna que contiene tareas.'
-                        : 'No se pudo eliminar la columna';
-                this.messageService.add({ severity: 'error', summary: 'Error', detail });
-            }
+            error: (err) =>
+                this.messageService.add({
+                    severity: 'error',
+                    summary: 'Error',
+                    detail: err.error?.error ?? 'No se pudo eliminar la columna'
+                })
         });
     }
 

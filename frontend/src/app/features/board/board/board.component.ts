@@ -234,14 +234,15 @@ export class BoardComponent implements OnInit, OnDestroy {
 
         this.taskService.move(task.id, { targetColumnId: targetColumn.id, targetIndex: event.currentIndex }).subscribe({
             next: (updated) => this.replaceTaskInPlace(updated),
-            error: () => {
+            error: (err) => {
                 if (this.board) {
                     this.board = { ...this.board, columns: snapshot };
                 }
+                const reason = err.error?.error ?? 'No se pudo mover la tarea';
                 this.messageService.add({
                     severity: 'error',
                     summary: 'Error',
-                    detail: 'No se pudo mover la tarea, se revirtió el cambio.'
+                    detail: `${reason}, se revirtió el cambio.`
                 });
             }
         });
@@ -277,7 +278,12 @@ export class BoardComponent implements OnInit, OnDestroy {
                 }
                 this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Tarea eliminada' });
             },
-            error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No se pudo eliminar la tarea' })
+            error: (err) =>
+                this.messageService.add({
+                    severity: 'error',
+                    summary: 'Error',
+                    detail: err.error?.error ?? 'No se pudo eliminar la tarea'
+                })
         });
     }
 

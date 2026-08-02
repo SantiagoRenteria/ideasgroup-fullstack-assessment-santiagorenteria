@@ -103,7 +103,12 @@ export class ProjectListComponent implements OnInit {
                 this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Proyecto eliminado' });
                 this.load();
             },
-            error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No se pudo eliminar el proyecto' })
+            error: (err) =>
+                this.messageService.add({
+                    severity: 'error',
+                    summary: 'Error',
+                    detail: err.error?.error ?? 'No se pudo eliminar el proyecto'
+                })
         });
     }
 }
