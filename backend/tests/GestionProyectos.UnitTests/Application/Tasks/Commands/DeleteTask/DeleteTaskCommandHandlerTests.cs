@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Common.Outbox;
 using GestionProyectos.Application.Tasks.Commands.DeleteTask;
 using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
@@ -15,10 +16,11 @@ public class DeleteTaskCommandHandlerTests
     private readonly ITaskRepository _taskRepository = Substitute.For<ITaskRepository>();
     private readonly IColumnRepository _columnRepository = Substitute.For<IColumnRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
-    private readonly IBoardNotifier _boardNotifier = Substitute.For<IBoardNotifier>();
+    private readonly IOutboxWriter _outboxWriter = Substitute.For<IOutboxWriter>();
+    private readonly IOutboxSignal _outboxSignal = Substitute.For<IOutboxSignal>();
 
     private DeleteTaskCommandHandler CreateHandler() =>
-        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier, NullLogger<DeleteTaskCommandHandler>.Instance);
+        new(_taskRepository, _columnRepository, _unitOfWork, _outboxWriter, _outboxSignal, NullLogger<DeleteTaskCommandHandler>.Instance);
 
     [Fact]
     public async Task Handle_TareaExiste_LaEliminaYPersisteCambios()
@@ -65,7 +67,11 @@ public class DeleteTaskCommandHandlerTests
 
         await handler.Handle(new DeleteTaskCommand(task.Id, "conn-1"), CancellationToken.None);
 
-        await _boardNotifier.Received(1).TaskDeletedAsync(column.ProjectId, task.Id, task.ColumnId, "conn-1", Arg.Any<CancellationToken>());
+        _outboxWriter.Received(1).Enqueue(
+            OutboxEventTypes.TaskDeleted,
+            column.ProjectId,
+            Arg.Is<TaskDeletedOutboxPayload>(p => p.TaskId == task.Id && p.ColumnId == task.ColumnId),
+            "conn-1");
     }
 
     // ADR §15.2: conflicto de concurrencia al eliminar (otra sesion ya la movio/edito).
@@ -84,6 +90,8 @@ public class DeleteTaskCommandHandlerTests
         Assert.False(result.IsSuccess);
         Assert.Equal(DeleteTaskCommandHandler.ConcurrencyConflict, result.Error);
         Assert.Equal(ErrorType.Conflict, result.ErrorType);
-        await _boardNotifier.DidNotReceive().TaskDeletedAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        // La garantia real es que nunca se avisa al dispatcher tras un conflicto: Signal()
+        // solo se llama despues de un SaveChanges exitoso.
+        _outboxSignal.DidNotReceive().Signal();
     }
 }

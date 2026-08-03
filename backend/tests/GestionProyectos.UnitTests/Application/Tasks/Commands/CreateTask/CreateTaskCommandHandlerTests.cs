@@ -1,4 +1,5 @@
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Common.Outbox;
 using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.CreateTask;
 using GestionProyectos.Domain.Common;
@@ -15,12 +16,13 @@ public class CreateTaskCommandHandlerTests
     private readonly IColumnRepository _columnRepository = Substitute.For<IColumnRepository>();
     private readonly ITaskRepository _taskRepository = Substitute.For<ITaskRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
-    private readonly IBoardNotifier _boardNotifier = Substitute.For<IBoardNotifier>();
+    private readonly IOutboxWriter _outboxWriter = Substitute.For<IOutboxWriter>();
+    private readonly IOutboxSignal _outboxSignal = Substitute.For<IOutboxSignal>();
 
     private static Column CreateColumn() => new(Guid.NewGuid(), Guid.NewGuid(), "Por hacer", 0);
 
     private CreateTaskCommandHandler CreateHandler() =>
-        new(_columnRepository, _taskRepository, _unitOfWork, _boardNotifier, NullLogger<CreateTaskCommandHandler>.Instance);
+        new(_columnRepository, _taskRepository, _unitOfWork, _outboxWriter, _outboxSignal, NullLogger<CreateTaskCommandHandler>.Instance);
 
     [Fact]
     public async Task Handle_ColumnaVacia_CreaTareaConClaveInicial()
@@ -88,10 +90,10 @@ public class CreateTaskCommandHandlerTests
 
         await handler.Handle(command, CancellationToken.None);
 
-        await _boardNotifier.Received(1).TaskCreatedAsync(
+        _outboxWriter.Received(1).Enqueue(
+            OutboxEventTypes.TaskCreated,
             column.ProjectId,
             Arg.Is<TaskResponseDto>(dto => dto.Title == "Titulo"),
-            "conn-1",
-            Arg.Any<CancellationToken>());
+            "conn-1");
     }
 }
