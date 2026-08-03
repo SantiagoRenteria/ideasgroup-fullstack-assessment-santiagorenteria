@@ -88,25 +88,55 @@ export class BoardComponent implements OnInit, OnDestroy {
             this.realtimeService.taskUpdated$.subscribe((task) => this.replaceTaskInPlace(task)),
             this.realtimeService.taskDeleted$.subscribe((payload) => this.applyRemoteTaskDeleted(payload)),
             this.realtimeService.taskMoved$.subscribe((payload) => this.applyRemoteTaskMoved(payload)),
-            this.realtimeService.connectedUsers$.subscribe((users) => (this.connectedUsers = users))
+            this.realtimeService.connectedUsers$.subscribe((users) => (this.connectedUsers = users)),
+            // Los eventos emitidos mientras la conexion estuvo caida no se recuperan por el
+            // canal (SignalR no los almacena), asi que al volver el estado local es sospechoso
+            // y solo un refetch lo corrige. No es polling: se dispara por reconexion, no por
+            // intervalo -- ver ADR §28.3.
+            this.realtimeService.reconnected$.subscribe(() => this.loadBoard())
         );
+    }
+
+    // Unico punto que localiza una tarea en el estado local, y lo hace por id sobre TODO el
+    // tablero, nunca por el columnId que trae el evento. Ese columnId es la posicion en el
+    // servidor, y puede diferir de la local por causas legitimas: un evento perdido durante
+    // una reconexion, la latencia del poller del outbox (§24), o un drag&drop optimista que
+    // ya movio la tarjeta de array sin reescribir su columnId. Cuando los handlers confiaban
+    // en el payload, la operacion no se aplicaba en ninguna parte y la tarjeta quedaba
+    // fantasma -- ver ADR §28.1.
+    private findTaskLocation(taskId: string): { column: BoardColumn; index: number } | null {
+        for (const column of this.board?.columns ?? []) {
+            const index = column.tasks.findIndex((t) => t.id === taskId);
+            if (index >= 0) {
+                return { column, index };
+            }
+        }
+        return null;
     }
 
     // Replican la misma mutacion optimista que onDrop/deleteTask (ADR §15.5); el emisor
     // no recibe su propio evento (ADR §15.3), no hace falta distinguir propio/ajeno.
     private applyRemoteTaskCreated(task: BoardTask): void {
-        const column = this.board?.columns.find((c) => c.id === task.columnId);
-        if (!column || column.tasks.some((t) => t.id === task.id)) {
+        // El guard de duplicado mira todo el tablero, no solo la columna del evento: si la
+        // tarea ya esta en cualquier columna, este evento es redundante y volver a insertarla
+        // la mostraria dos veces.
+        if (!this.board || this.findTaskLocation(task.id)) {
             return;
         }
+
+        const column = this.board.columns.find((c) => c.id === task.columnId);
+        if (!column) {
+            return;
+        }
+
         column.tasks.push(task);
         column.tasks.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
     }
 
     private applyRemoteTaskDeleted(payload: TaskDeletedPayload): void {
-        const column = this.board?.columns.find((c) => c.id === payload.columnId);
-        if (column) {
-            column.tasks = column.tasks.filter((t) => t.id !== payload.taskId);
+        const location = this.findTaskLocation(payload.taskId);
+        if (location) {
+            location.column.tasks.splice(location.index, 1);
         }
     }
 
@@ -115,19 +145,23 @@ export class BoardComponent implements OnInit, OnDestroy {
             return;
         }
 
-        for (const column of this.board.columns) {
-            const index = column.tasks.findIndex((t) => t.id === payload.task.id);
-            if (index >= 0) {
-                column.tasks.splice(index, 1);
-                break;
-            }
+        const targetColumn = this.board.columns.find((c) => c.id === payload.task.columnId);
+
+        // Sin columna destino conocida (otra sesion la creo y el canal no notifica cambios de
+        // columnas) se aborta antes de tocar nada: quitar la tarea y no poder reinsertarla la
+        // haria desaparecer del tablero, y una tarjeta en su sitio viejo es un error mucho mas
+        // benigno que una tarjeta ausente.
+        if (!targetColumn) {
+            return;
         }
 
-        const targetColumn = this.board.columns.find((c) => c.id === payload.task.columnId);
-        if (targetColumn) {
-            const insertAt = Math.min(payload.targetIndex, targetColumn.tasks.length);
-            targetColumn.tasks.splice(insertAt, 0, payload.task);
+        const location = this.findTaskLocation(payload.task.id);
+        if (location) {
+            location.column.tasks.splice(location.index, 1);
         }
+
+        const insertAt = Math.min(payload.targetIndex, targetColumn.tasks.length);
+        targetColumn.tasks.splice(insertAt, 0, payload.task);
     }
 
     loadBoard(): void {
@@ -241,11 +275,30 @@ export class BoardComponent implements OnInit, OnDestroy {
 
         this.taskService.move(task.id, { targetColumnId: targetColumn.id, targetIndex: event.currentIndex }).subscribe({
             next: (updated) => this.replaceTaskInPlace(updated),
-            error: (err) => {
+            error: (err: HttpErrorResponse) => {
+                // Un 404 (la tarea o la columna destino ya no existen) no es un fallo del
+                // traslado: es la prueba de que esta copia del tablero perdio eventos.
+                // Revertir devolveria al usuario al mismo estado imposible y cada reintento
+                // sumaria otra alerta sobre algo que no puede funcionar; se resincroniza.
+                // Es un refetch de datos, no una recarga de pagina, y sin intervencion del
+                // usuario -- el enunciado §6.7 exige "sin recarga manual" (ADR §28.2).
+                if (err.status === 404) {
+                    this.messageService.add({
+                        severity: 'warn',
+                        summary: 'Tablero desactualizado',
+                        detail: 'Otra sesión ya había cambiado esto. Se actualizó el tablero.'
+                    });
+                    this.loadBoard();
+                    return;
+                }
+
                 if (this.board) {
                     this.board = { ...this.board, columns: snapshot };
                 }
-                const reason = err.error?.error ?? 'No se pudo mover la tarea';
+
+                // Sin el punto final del mensaje del servidor: si no, queda "Tarea no
+                // encontrada., se revirtió el cambio."
+                const reason = (err.error?.error ?? 'No se pudo mover la tarea').replace(/\.$/, '');
                 this.messageService.add({
                     severity: 'error',
                     summary: 'Error',
@@ -279,9 +332,12 @@ export class BoardComponent implements OnInit, OnDestroy {
     private deleteTask(task: BoardTask): void {
         this.taskService.delete(task.id).subscribe({
             next: () => {
-                const column = this.board?.columns.find((c) => c.id === task.columnId);
-                if (column) {
-                    column.tasks = column.tasks.filter((t) => t.id !== task.id);
+                // Por id y no por task.columnId: si el usuario arrastro la tarjeta y borra
+                // antes de que llegue la respuesta del move, el objeto local todavia apunta a
+                // la columna de origen (cdk mueve el elemento de array, no reescribe el DTO).
+                const location = this.findTaskLocation(task.id);
+                if (location) {
+                    location.column.tasks.splice(location.index, 1);
                 }
                 this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Tarea eliminada' });
             },
@@ -294,12 +350,14 @@ export class BoardComponent implements OnInit, OnDestroy {
         });
     }
 
+    // Reemplaza la tarea donde realmente este, no donde el servidor dice que esta: una
+    // edicion no cambia de columna, y mover la tarjeta aqui pisaria un traslado que este
+    // cliente todavia no haya visto reflejado. Antes, si las columnas diferian, la edicion
+    // se descartaba en silencio -- sin alerta y sin cambio visible (ADR §28.1).
     private replaceTaskInPlace(updated: BoardTask): void {
-        const column = this.board?.columns.find((c) => c.id === updated.columnId);
-        const index = column?.tasks.findIndex((t) => t.id === updated.id) ?? -1;
-
-        if (column && index >= 0) {
-            column.tasks[index] = updated;
+        const location = this.findTaskLocation(updated.id);
+        if (location) {
+            location.column.tasks[location.index] = updated;
         }
     }
 }

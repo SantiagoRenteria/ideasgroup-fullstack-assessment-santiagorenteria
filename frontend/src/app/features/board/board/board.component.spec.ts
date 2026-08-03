@@ -28,6 +28,7 @@ describe('BoardComponent', () => {
     let taskDeleted$: Subject<TaskDeletedPayload>;
     let taskMoved$: Subject<TaskMovedPayload>;
     let connectedUsers$: Subject<string[]>;
+    let reconnected$: Subject<void>;
 
     function createTask(
         id: string,
@@ -64,6 +65,7 @@ describe('BoardComponent', () => {
         taskDeleted$ = new Subject<TaskDeletedPayload>();
         taskMoved$ = new Subject<TaskMovedPayload>();
         connectedUsers$ = new Subject<string[]>();
+        reconnected$ = new Subject<void>();
         const realtimeService = {
             connect: () => Promise.resolve(),
             joinBoard: () => Promise.resolve(),
@@ -73,7 +75,8 @@ describe('BoardComponent', () => {
             taskUpdated$,
             taskDeleted$,
             taskMoved$,
-            connectedUsers$
+            connectedUsers$,
+            reconnected$
         };
 
         await TestBed.configureTestingModule({
@@ -253,6 +256,115 @@ describe('BoardComponent', () => {
 
         expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t2']);
         expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t1', 't3']);
+    });
+
+    // Los cuatro siguientes cubren la misma clase de bug (ADR §28.1): el columnId del evento
+    // es la posicion en el servidor y puede diferir de la local si se perdio un evento. Los
+    // handlers deben localizar la tarea por id en todo el tablero, no fiarse del payload.
+    it('un TaskDeleted quita la tarea aunque el evento traiga una columna distinta a la local', () => {
+        fixture.detectChanges();
+
+        // El servidor cree que t1 vive en col-2 (se perdio el TaskMoved que la llevo alli);
+        // localmente sigue pintada en col-1. Antes quedaba fantasma y cada intento de moverla
+        // devolvia 404 "Tarea no encontrada".
+        taskDeleted$.next({ taskId: 't1', columnId: 'col-2' });
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t2']);
+        expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t3']);
+    });
+
+    it('un TaskUpdated aplica la edicion aunque el evento traiga una columna distinta a la local', () => {
+        fixture.detectChanges();
+
+        const updated = { ...createTask('t1', 'col-2', 'a'), title: 'Editada desde otra sesion' };
+        taskUpdated$.next(updated);
+
+        // Se aplica donde la tarea realmente esta, y sin trasladarla: editar no mueve.
+        expect(component.board!.columns[0].tasks[0].title).toBe('Editada desde otra sesion');
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t1', 't2']);
+    });
+
+    it('un TaskCreated no duplica la tarea si ya existe en otra columna del tablero local', () => {
+        fixture.detectChanges();
+
+        taskCreated$.next(createTask('t1', 'col-2', 'z'));
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t1', 't2']);
+        expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t3']);
+    });
+
+    it('un TaskMoved a una columna que este cliente no conoce deja la tarea donde esta en vez de perderla', () => {
+        fixture.detectChanges();
+
+        // Otra sesion creo una columna nueva; el canal no notifica cambios de columnas, asi
+        // que este cliente no la tiene. Quitar la tarea sin poder reinsertarla la borraria de
+        // la vista.
+        taskMoved$.next({ task: createTask('t1', 'col-que-no-conozco', 'ab'), targetIndex: 0 });
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t1', 't2']);
+    });
+
+    it('confirmDelete quita la tarjeta aunque el columnId del objeto local haya quedado desfasado', () => {
+        fixture.detectChanges();
+        taskService.delete.and.returnValue(of(undefined));
+        const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+        spyOn(confirmationService, 'confirm').and.callFake((options: any) => {
+            options.accept();
+            return confirmationService;
+        });
+
+        // Reproduce el estado que deja un drag&drop optimista: cdk movio la tarjeta al array
+        // de col-2, pero el DTO sigue diciendo col-1.
+        const task = component.board!.columns[0].tasks[0];
+        component.board!.columns[0].tasks.splice(0, 1);
+        component.board!.columns[1].tasks.push(task);
+
+        component.confirmDelete(task);
+
+        expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t3']);
+    });
+
+    it('al reconectar el canal se resincroniza el tablero, porque los eventos de la caida no se recuperan', () => {
+        fixture.detectChanges();
+        boardService.getByProject.calls.reset();
+
+        reconnected$.next();
+
+        expect(boardService.getByProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('onDrop ante un 404 resincroniza el tablero en vez de revertir a un estado imposible', () => {
+        fixture.detectChanges();
+        taskService.move.and.returnValue(
+            throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Tarea no encontrada.' } }))
+        );
+        const messageService = fixture.debugElement.injector.get(MessageService);
+        spyOn(messageService, 'add');
+        boardService.getByProject.calls.reset();
+
+        const column = component.board!.columns[0];
+        component.onDrop(dropEvent(column.tasks[0], 'col-1', 'col-1', 0, 1), column);
+
+        expect(boardService.getByProject).toHaveBeenCalledTimes(1);
+        expect(messageService.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'warn' }));
+    });
+
+    it('onDrop ante un error que no es 404 revierte y no duplica el punto del mensaje del servidor', () => {
+        fixture.detectChanges();
+        taskService.move.and.returnValue(
+            throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'La tarea fue modificada por otra sesión.' } }))
+        );
+        const messageService = fixture.debugElement.injector.get(MessageService);
+        spyOn(messageService, 'add');
+
+        const column = component.board!.columns[0];
+        const ordenOriginal = column.tasks.map((t) => t.id);
+        component.onDrop(dropEvent(column.tasks[0], 'col-1', 'col-1', 0, 1), column);
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(ordenOriginal);
+        expect(messageService.add).toHaveBeenCalledWith(
+            jasmine.objectContaining({ detail: 'La tarea fue modificada por otra sesión, se revirtió el cambio.' })
+        );
     });
 
     it('downloadReport pide el reporte en el formato solicitado y dispara la descarga', () => {

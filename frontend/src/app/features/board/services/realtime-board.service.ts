@@ -31,11 +31,17 @@ export class RealtimeBoardService {
     // debe recibir la lista actual de inmediato, no solo los cambios futuros.
     private readonly connectedUsersSubject = new BehaviorSubject<string[]>([]);
 
+    // Avisa de que hubo una ventana ciega: mientras la conexion estuvo caida, SignalR no
+    // guarda ni reenvia los eventos emitidos, asi que el estado local quedo desfasado sin
+    // forma de deducirlo desde el propio canal -- ver ADR §28.3.
+    private readonly reconnectedSubject = new Subject<void>();
+
     readonly taskCreated$ = this.taskCreatedSubject.asObservable();
     readonly taskUpdated$ = this.taskUpdatedSubject.asObservable();
     readonly taskDeleted$ = this.taskDeletedSubject.asObservable();
     readonly taskMoved$ = this.taskMovedSubject.asObservable();
     readonly connectedUsers$ = this.connectedUsersSubject.asObservable();
+    readonly reconnected$ = this.reconnectedSubject.asObservable();
 
     constructor(private authService: AuthService) {}
 
@@ -61,11 +67,16 @@ export class RealtimeBoardService {
         this.connection.on('BoardPresenceChanged', (users: string[]) => this.connectedUsersSubject.next(users));
 
         // La reconexion automatica abre una conexion nueva (nuevo connectionId): la
-        // membresia de grupo del servidor se pierde y hay que solicitarla de nuevo.
+        // membresia de grupo del servidor se pierde y hay que solicitarla de nuevo. Solo
+        // despues de volver al grupo se anuncia la reconexion, para que quien resincronice
+        // no se pierda los eventos que lleguen entre el refetch y el JoinBoard.
         this.connection.onreconnected(() => {
-            if (this.currentProjectId) {
-                void this.connection?.invoke('JoinBoard', this.currentProjectId);
+            if (!this.currentProjectId) {
+                return;
             }
+            void this.connection
+                ?.invoke('JoinBoard', this.currentProjectId)
+                .then(() => this.reconnectedSubject.next());
         });
 
         await this.connection.start();
