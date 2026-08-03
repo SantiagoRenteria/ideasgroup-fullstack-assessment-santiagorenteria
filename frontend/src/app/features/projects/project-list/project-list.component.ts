@@ -6,8 +6,7 @@ import { ProjectService } from '../services/project.service';
 
 @Component({
     selector: 'app-project-list',
-    templateUrl: './project-list.component.html',
-    providers: [ConfirmationService, MessageService]
+    templateUrl: './project-list.component.html'
 })
 export class ProjectListComponent implements OnInit {
     projects: Project[] = [];

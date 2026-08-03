@@ -1,7 +1,8 @@
 import { CdkDragDrop } from '@angular/cdk/drag-drop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { Subject, of, throwError } from 'rxjs';
 import { AppUser } from '../models/app-user.model';
@@ -21,11 +22,13 @@ describe('BoardComponent', () => {
     let taskService: jasmine.SpyObj<TaskService>;
     let reportService: jasmine.SpyObj<ReportService>;
     let userService: jasmine.SpyObj<UserService>;
+    let router: jasmine.SpyObj<Router>;
     let taskCreated$: Subject<BoardTask>;
     let taskUpdated$: Subject<BoardTask>;
     let taskDeleted$: Subject<TaskDeletedPayload>;
     let taskMoved$: Subject<TaskMovedPayload>;
     let connectedUsers$: Subject<string[]>;
+    let reconnected$: Subject<void>;
 
     function createTask(
         id: string,
@@ -53,6 +56,7 @@ describe('BoardComponent', () => {
         taskService = jasmine.createSpyObj('TaskService', ['move', 'delete']);
         reportService = jasmine.createSpyObj('ReportService', ['download']);
         userService = jasmine.createSpyObj('UserService', ['listAll']);
+        router = jasmine.createSpyObj('Router', ['navigate']);
         boardService.getByProject.and.returnValue(of(buildBoard()));
         userService.listAll.and.returnValue(of([]));
 
@@ -61,6 +65,7 @@ describe('BoardComponent', () => {
         taskDeleted$ = new Subject<TaskDeletedPayload>();
         taskMoved$ = new Subject<TaskMovedPayload>();
         connectedUsers$ = new Subject<string[]>();
+        reconnected$ = new Subject<void>();
         const realtimeService = {
             connect: () => Promise.resolve(),
             joinBoard: () => Promise.resolve(),
@@ -70,7 +75,8 @@ describe('BoardComponent', () => {
             taskUpdated$,
             taskDeleted$,
             taskMoved$,
-            connectedUsers$
+            connectedUsers$,
+            reconnected$
         };
 
         await TestBed.configureTestingModule({
@@ -82,6 +88,7 @@ describe('BoardComponent', () => {
                 { provide: UserService, useValue: userService },
                 { provide: RealtimeBoardService, useValue: realtimeService },
                 { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ projectId: 'proj-1' }) } } },
+                { provide: Router, useValue: router },
                 ConfirmationService,
                 MessageService
             ],
@@ -118,6 +125,36 @@ describe('BoardComponent', () => {
 
         expect(boardService.getByProject).toHaveBeenCalledWith('proj-1');
         expect(component.board?.columns.length).toBe(2);
+    });
+
+    it('loadBoard saca al usuario del tablero si el proyecto ya no existe (404), sin dejarlo en una vista fantasma', () => {
+        // Otra sesion borro el proyecto mientras esta lo tenia abierto: las columnas que
+        // quedarian en pantalla ya rechazan toda mutacion con 404 (ver ADR §27.2).
+        boardService.getByProject.and.returnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+        // Mismo comentario que en downloadReport: instancia unica provista por TestBed.
+        const messageService = fixture.debugElement.injector.get(MessageService);
+        spyOn(messageService, 'add');
+
+        fixture.detectChanges();
+
+        expect(component.board).toBeNull();
+        expect(component.loading).toBeFalse();
+        expect(router.navigate).toHaveBeenCalledWith(['/projects']);
+        expect(messageService.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'warn' }));
+    });
+
+    it('loadBoard ante un error que no es 404 avisa pero deja al usuario donde esta', () => {
+        // Un 500 o una caida de red son transitorios: expulsar al usuario del tablero seria
+        // peor que dejarlo reintentar.
+        boardService.getByProject.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        const messageService = fixture.debugElement.injector.get(MessageService);
+        spyOn(messageService, 'add');
+
+        fixture.detectChanges();
+
+        expect(component.loading).toBeFalse();
+        expect(router.navigate).not.toHaveBeenCalled();
+        expect(messageService.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'error' }));
     });
 
     it('onDrop reordena dentro de la misma columna de forma optimista y llama a TaskService.move', () => {
@@ -168,9 +205,9 @@ describe('BoardComponent', () => {
     it('confirmDelete, al aceptar, elimina la tarea de la columna local', () => {
         fixture.detectChanges();
         taskService.delete.and.returnValue(of(undefined));
-        // ConfirmationService esta declarado como provider a nivel de componente (no del
-        // modulo de testing), asi que hay que resolverlo desde el injector del propio
-        // componente para interceptar la misma instancia que usa BoardComponent.
+        // ConfirmationService/MessageService ahora se proveen una sola vez a nivel de app
+        // (ver revision de arquitectura frontend, shared/); TestBed los provee arriba, asi que
+        // esta es la misma instancia inyectada en BoardComponent.
         const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
         spyOn(confirmationService, 'confirm').and.callFake((options: any) => {
             options.accept();
@@ -221,6 +258,115 @@ describe('BoardComponent', () => {
         expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t1', 't3']);
     });
 
+    // Los cuatro siguientes cubren la misma clase de bug (ADR §28.1): el columnId del evento
+    // es la posicion en el servidor y puede diferir de la local si se perdio un evento. Los
+    // handlers deben localizar la tarea por id en todo el tablero, no fiarse del payload.
+    it('un TaskDeleted quita la tarea aunque el evento traiga una columna distinta a la local', () => {
+        fixture.detectChanges();
+
+        // El servidor cree que t1 vive en col-2 (se perdio el TaskMoved que la llevo alli);
+        // localmente sigue pintada en col-1. Antes quedaba fantasma y cada intento de moverla
+        // devolvia 404 "Tarea no encontrada".
+        taskDeleted$.next({ taskId: 't1', columnId: 'col-2' });
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t2']);
+        expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t3']);
+    });
+
+    it('un TaskUpdated aplica la edicion aunque el evento traiga una columna distinta a la local', () => {
+        fixture.detectChanges();
+
+        const updated = { ...createTask('t1', 'col-2', 'a'), title: 'Editada desde otra sesion' };
+        taskUpdated$.next(updated);
+
+        // Se aplica donde la tarea realmente esta, y sin trasladarla: editar no mueve.
+        expect(component.board!.columns[0].tasks[0].title).toBe('Editada desde otra sesion');
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t1', 't2']);
+    });
+
+    it('un TaskCreated no duplica la tarea si ya existe en otra columna del tablero local', () => {
+        fixture.detectChanges();
+
+        taskCreated$.next(createTask('t1', 'col-2', 'z'));
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t1', 't2']);
+        expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t3']);
+    });
+
+    it('un TaskMoved a una columna que este cliente no conoce deja la tarea donde esta en vez de perderla', () => {
+        fixture.detectChanges();
+
+        // Otra sesion creo una columna nueva; el canal no notifica cambios de columnas, asi
+        // que este cliente no la tiene. Quitar la tarea sin poder reinsertarla la borraria de
+        // la vista.
+        taskMoved$.next({ task: createTask('t1', 'col-que-no-conozco', 'ab'), targetIndex: 0 });
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(['t1', 't2']);
+    });
+
+    it('confirmDelete quita la tarjeta aunque el columnId del objeto local haya quedado desfasado', () => {
+        fixture.detectChanges();
+        taskService.delete.and.returnValue(of(undefined));
+        const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+        spyOn(confirmationService, 'confirm').and.callFake((options: any) => {
+            options.accept();
+            return confirmationService;
+        });
+
+        // Reproduce el estado que deja un drag&drop optimista: cdk movio la tarjeta al array
+        // de col-2, pero el DTO sigue diciendo col-1.
+        const task = component.board!.columns[0].tasks[0];
+        component.board!.columns[0].tasks.splice(0, 1);
+        component.board!.columns[1].tasks.push(task);
+
+        component.confirmDelete(task);
+
+        expect(component.board!.columns[1].tasks.map((t) => t.id)).toEqual(['t3']);
+    });
+
+    it('al reconectar el canal se resincroniza el tablero, porque los eventos de la caida no se recuperan', () => {
+        fixture.detectChanges();
+        boardService.getByProject.calls.reset();
+
+        reconnected$.next();
+
+        expect(boardService.getByProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('onDrop ante un 404 resincroniza el tablero en vez de revertir a un estado imposible', () => {
+        fixture.detectChanges();
+        taskService.move.and.returnValue(
+            throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Tarea no encontrada.' } }))
+        );
+        const messageService = fixture.debugElement.injector.get(MessageService);
+        spyOn(messageService, 'add');
+        boardService.getByProject.calls.reset();
+
+        const column = component.board!.columns[0];
+        component.onDrop(dropEvent(column.tasks[0], 'col-1', 'col-1', 0, 1), column);
+
+        expect(boardService.getByProject).toHaveBeenCalledTimes(1);
+        expect(messageService.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'warn' }));
+    });
+
+    it('onDrop ante un error que no es 404 revierte y no duplica el punto del mensaje del servidor', () => {
+        fixture.detectChanges();
+        taskService.move.and.returnValue(
+            throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'La tarea fue modificada por otra sesión.' } }))
+        );
+        const messageService = fixture.debugElement.injector.get(MessageService);
+        spyOn(messageService, 'add');
+
+        const column = component.board!.columns[0];
+        const ordenOriginal = column.tasks.map((t) => t.id);
+        component.onDrop(dropEvent(column.tasks[0], 'col-1', 'col-1', 0, 1), column);
+
+        expect(component.board!.columns[0].tasks.map((t) => t.id)).toEqual(ordenOriginal);
+        expect(messageService.add).toHaveBeenCalledWith(
+            jasmine.objectContaining({ detail: 'La tarea fue modificada por otra sesión, se revirtió el cambio.' })
+        );
+    });
+
     it('downloadReport pide el reporte en el formato solicitado y dispara la descarga', () => {
         fixture.detectChanges();
         const blob = new Blob(['contenido']);
@@ -249,9 +395,7 @@ describe('BoardComponent', () => {
     it('downloadReport muestra un error si la descarga falla, sin dejar el boton en estado de carga', () => {
         fixture.detectChanges();
         reportService.download.and.returnValue(throwError(() => new Error('fallo de red')));
-        // MessageService esta declarado como provider a nivel de componente (ver el mismo
-        // comentario en el test de confirmDelete), asi que hay que resolverlo desde el
-        // injector del propio componente para interceptar la misma instancia.
+        // Mismo comentario que en confirmDelete: instancia unica provista por TestBed.
         const messageService = fixture.debugElement.injector.get(MessageService);
         spyOn(messageService, 'add');
 

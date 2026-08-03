@@ -3,7 +3,7 @@ import { Component, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChange
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { MessageService } from 'primeng/api';
 import { AppUser } from '../models/app-user.model';
-import { BoardTask, TASK_PRIORITY_LABELS, TaskPriority } from '../models/task.model';
+import { BoardTask, TASK_PRIORITY_OPTIONS, TaskPriority } from '../models/task.model';
 import { TaskService } from '../services/task.service';
 import { UserService } from '../services/user.service';
 
@@ -22,7 +22,7 @@ export class TaskFormComponent implements OnInit, OnChanges {
     saving = false;
     users: AppUser[] = [];
 
-    readonly priorityOptions = Object.values(TaskPriority).map((value) => ({ label: TASK_PRIORITY_LABELS[value], value }));
+    readonly priorityOptions = TASK_PRIORITY_OPTIONS;
 
     form: FormGroup = this.fb.group({
         title: ['', [Validators.required, Validators.maxLength(200)]],

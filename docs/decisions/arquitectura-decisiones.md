@@ -600,3 +600,222 @@ Al revisar si la tabla de Patrones de Diseño (§3) y la fila de RabbitMQ (§1) 
 ### 25.3 README también actualizado
 
 `README.md` §2 gana instrucciones más específicas (tiempo de primer arranque, cómo verificar `/health`, cómo detener y limpiar el volumen, cómo importar y correr la colección completa desde Postman o via `newman` en línea de comandos) y §5/§6/§10 se corrigen para dejar de describir un sistema que ya no existe (los Handlers de Tasks ya no llaman a `IBoardNotifier` directamente, el conteo de tests de integración no incluía los 4 de `OutboxProcessorTests`).
+
+---
+
+## 26. Auditoría de frontend y seguridad general (fix/frontend-security-hardening)
+
+Revisión pedida explícitamente por Santiago con foco en frontend y seguridad transversal (no solo backend, ya auditado en §19-§24), con instrucción explícita de "nada de camino feliz". Se identificaron hallazgos reales y se corrigieron en la misma sesión (no solo se documentaron) porque ninguno requería una decisión de arquitectura mayor salvo el punto §26.4.
+
+### 26.1 Sin cabeceras de seguridad HTTP — el hallazgo más serio
+
+Ni `nginx.conf` ni la API emitían `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` ni `Permissions-Policy`. La única defensa contra XSS era el auto-escape de Angular en interpolación (verificado: cero usos de `[innerHTML]`/`bypassSecurityTrust*` en todo `frontend/src`) — sin CSP, esa era la única capa, y sin `X-Frame-Options`/`frame-ancestors`, el login era embebible en un `<iframe>` de un sitio malicioso (clickjacking).
+
+**Decisión:** cabeceras agregadas en `frontend/nginx.conf` (único punto de entrada, §1). CSP con `script-src 'self'` y `style-src 'self' 'unsafe-inline'` (Sakai/PrimeNG usa estilos inline en varios templates; una CSP que los bloqueara habría roto la UI). `connect-src` incluye `ws:`/`wss:` porque SignalR negocia el handshake por WebSocket bajo el mismo origen. `frame-ancestors 'none'` cierra el clickjacking sin depender de `X-Frame-Options` (redundante a propósito para navegadores viejos que no leen CSP).
+
+**Efecto secundario no anticipado — la CSP rompió toda la aplicación, y cómo se diagnosticó.** Al levantar el stack con `docker compose`, la aplicación entera (empezando por el login) se renderizó sin ningún estilo. La causa: la optimización `inlineCritical` de Angular, **activa por defecto en builds de producción**, difiere la carga del CSS emitiendo `<link rel="stylesheet" media="print" onload="this.media='all'">`. Ese `onload` es un **manejador de evento inline**, que `script-src 'self'` bloquea por definición — las hojas quedaban permanentemente en `media="print"` y nunca se aplicaban. Solo se manifestaba en el build de producción: `ng serve` no aplica `inlineCritical`, así que la verificación en el servidor de desarrollo pasó limpia y dio una falsa sensación de seguridad.
+
+Se resolvió desactivando `inlineCritical` en `frontend/angular.json` (`optimization.styles.inlineCritical: false`), no agregando `'unsafe-inline'` a `script-src`: esa segunda opción habría anulado justamente la protección que motivó la cabecera, a cambio de un beneficio marginal de *first contentful paint* en una aplicación de evaluación.
+
+**Lección de método, registrada a propósito:** el diagnóstico inicial fue incorrecto dos veces (se culpó primero a la CSP sin pruebas, luego al refactor de `shared/` del §26.4, que era inocente). Ambos errores tuvieron la misma raíz: se verificó en el navegador **sin controlar la caché**, y el navegador estaba ejecutando un `main.<hash>.js` de un build anterior. Recién al comparar los hashes servidos por nginx contra los cargados en la página se detectó la discrepancia. El diagnóstico definitivo se hizo midiendo geometría real (`getBoundingClientRect` sobre cinco elementos) contra el build de `main` servido en el mismo puerto y con la caché forzada a saltarse, no por inspección visual — ver §26.9 sobre el bug de caché que hizo posible esta confusión.
+
+### 26.2 CORS más ancho de lo necesario
+
+`AllowAnyHeader().AllowAnyMethod()` en `DependencyInjection.cs` — el origen ya estaba restringido a whitelist (§19), pero headers/métodos no. Acotado a `Authorization`/`Content-Type` y a los verbos REST que la API realmente expone (`GET/POST/PUT/DELETE/OPTIONS`). No es una vulnerabilidad explotable per se (el origen ya filtraba), pero es endurecimiento barato.
+
+### 26.3 Comentario de código que contradecía la decisión real
+
+`realtime-board.service.ts` afirmaba en un comentario que el JWT "vive solo en memoria", contradiciendo la decisión ya revisada en §17 (`sessionStorage`, desde Fase 4). Corregido. Es exactamente el tipo de divergencia documentación-código que §21 ya trató como no negociable, aplicado aquí a un comentario en vez de a un ADR.
+
+### 26.4 `shared/` — la capa documentada en §2.1 no existía en el código
+
+El ADR §2.1 promete `core/shared/features` en el frontend para cumplir la sección 4 del enunciado ("separación por capas... en el frontend"). El árbol real solo tenía `core/`, `features/` y `layout/` — `shared/` nunca se creó, y había duplicación real que debía vivir ahí:
+
+- `<p-toast>`/`<p-confirmDialog>` copiados literalmente en `board.component.html` y `project-list.component.html`, cada uno con su propio `providers: [ConfirmationService, MessageService]` a nivel de `@Component` (una instancia de cada servicio por página).
+- `priorityOptions = Object.values(TaskPriority).map(...)` derivado de forma idéntica en `board.component.ts` y `task-form.component.ts`.
+
+**Decisión (confirmada explícitamente por Santiago antes de implementar, regla del flujo obligatorio de `CLAUDE.md`):** se creó `frontend/src/app/shared/` con `AppNotificationsComponent` (host único de `p-toast`/`p-confirmDialog`) declarado en un nuevo `SharedModule`, montado una sola vez en `app.component.html` (raíz de la app, fuera de cualquier página). `ConfirmationService`/`MessageService` pasan a proveerse una sola vez en `AppModule` (antes: una instancia nueva por cada componente que los declaraba) — así todo componente que los inyecta (incluidos los hijos `TaskFormComponent`/`ProjectFormComponent`/`ProjectColumnsComponent`, que nunca los proveían y ya resolvían desde el ancestro más cercano) apunta a la misma instancia que el host raíz escucha. `priorityOptions` se centralizó como `TASK_PRIORITY_OPTIONS` en `task.model.ts`.
+
+**Alternativa descartada — dejar `shared/` sin crear y corregir solo la duplicación puntual:** se descarta porque el gap real no era la duplicación en sí (dos líneas, bajo costo) sino que el ADR documenta una capa arquitectónica exigida por el enunciado que el código nunca tuvo — exactamente el criterio que ya se aplicó en §21 ("cuando la documentación diverge del código, la brecha se cierra en el código, no reescribiendo la promesa a la baja").
+
+**No se tocó** (evaluado y descartado explícitamente, mismo criterio de no sobre-ingeniería que ya rige el resto del proyecto): migración a standalone components (Angular 17 lo permite, pero es una reescritura de superficie amplia sin beneficio funcional) y un state management centralizado tipo NgRx (con una sola vista consumiendo tiempo real, sería la misma sobre-ingeniería que §15.4 ya descartó para el servicio de SignalR).
+
+### 26.5 Login sin validación de cliente — inconsistencia de arquitectura de formularios
+
+`LoginComponent` era el único componente de la app en usar template-driven forms (`[(ngModel)]`, sin `required` ni validación de formato), mientras `TaskFormComponent`/`ProjectFormComponent` ya usaban Reactive Forms. No era una falla de seguridad (el backend ya valida con FluentValidation), pero un formulario que podía enviarse vacío y una inconsistencia de patrón no justificada en ningún punto del ADR. Migrado a Reactive Forms (`FormBuilder`, `Validators.required`/`.email`), consistente con el resto de la app.
+
+### 26.6 Bug preexistente encontrado al verificar en navegador, no parte de la auditoría original
+
+Al levantar `ng serve` para verificar los cambios anteriores, la consola mostraba `NG0303: Can't bind to 'ngIf'` en `AppComponent` — `AppModule` nunca importaba `CommonModule`, así que el `*ngIf="loading"` del overlay de carga entre navegaciones (`app.component.html`) nunca funcionó. No relacionado con los hallazgos de seguridad; se corrigió por ser un bug real y barato de arreglar, encontrado por seguir la disciplina de verificación en navegador antes de dar un cambio de frontend por cerrado.
+
+### 26.7 Alcance sin ACL por proyecto — no es un hallazgo, es scope explícito
+
+No existe ningún control de propiedad/rol: cualquier usuario autenticado puede ver y mutar cualquier proyecto/tablero. Contrastado contra el PDF del enunciado (sección 6.2: "todos los endpoints de negocio necesarios protegidos con autorización", sección 5: modelo de dominio mínimo sin roles) — el enunciado nunca pide multi-tenancy. Es coherente con "tablero compartido de equipo", así que no se implementó ningún cambio; se documenta aquí para que quede una respuesta lista si surge en la sustentación, en vez de que parezca un descuido no evaluado.
+
+### 26.8 No implementado — trade-off de rate limiting por IP, documentado, no rediseñado
+
+El rate limit de login (§19, 5/min por IP) protege contra DoS auto-infligido, pero también significa que usuarios legítimos detrás del mismo NAT/proxy corporativo comparten cupo. No se cambió a bloqueo por cuenta porque es un rediseño real (requiere lockout por usuario + reglas de desbloqueo) no solicitado y desproporcionado para 2 usuarios semilla — se deja documentado como limitación conocida, no como pendiente.
+
+### 26.9 `Cache-Control` ausente en nginx — bug real encontrado depurando lo anterior
+
+Perseguir el fallo del §26.1 destapó un bug independiente y más serio para el evaluador: `nginx.conf` no enviaba **ninguna** cabecera `Cache-Control`, solo `ETag`/`Last-Modified`. Con eso el navegador aplica caché heurística sobre `index.html` — el único archivo del build **sin hash en el nombre**, y precisamente el que referencia a todos los bundles hasheados. Efecto observado en vivo, no teórico: el navegador ejecutaba un `main.<hash>.js` que ya no existía en el servidor, sirviendo una SPA obsoleta completa después de un redespliegue. Al evaluador le pasaría lo mismo al recargar tras cualquier cambio.
+
+**Decisión:** `index.html` pasa a `no-cache, must-revalidate`; el resto de assets, que llevan hash de contenido (`outputHashing: all`, o sea que si cambia el contenido cambia la URL), a `immutable` con un año.
+
+**Detalle no obvio de nginx:** se implementó con un `map` a nivel `http` y un único `add_header Cache-Control $cache_control` a nivel `server`, **no** con un `add_header` dentro de cada `location`. Motivo: en nginx, un `add_header` en un bloque hijo **descarta todas** las cabeceras heredadas del padre — hacerlo por `location` habría dejado silenciosamente las cinco cabeceras de seguridad del §26.1 fuera de las respuestas de `index.html` y de los assets, es decir, habría desactivado el hardening justo donde más importa. Verificado con `curl` que ambas rutas devuelven `Cache-Control` **y** la CSP.
+
+**Regresión introducida por esta misma decisión, detectada después y corregida.** La herencia de cabeceras que motivó el `map` opera en *todos* los `location`, no solo en los de contenido estático: `location /api/` y `location /hubs/` tampoco declaran `add_header` propio, así que heredaban el `Cache-Control` del `server` y, al no coincidir con ninguna regex del `map`, caían en el `default`. Resultado: **cada respuesta de la API se servía con `public, max-age=31536000, immutable`** — un año de caché inmutable sobre datos de negocio. La verificación original con `curl` (arriba) solo cubrió `index.html` y un asset hasheado; nunca se probó una ruta del proxy, y ahí estaba el fallo.
+
+Se manifestó como un `404 Not Found` en `PATCH /api/tasks/{id}/move` sobre una tarea que el propio Santiago había borrado minutos antes: el navegador pintaba un tablero de dos horas atrás sin volver a preguntar. El diagnóstico se cerró por evidencia, no por hipótesis — el log de la API mostraba el `Warning` "Intento de mover la tarea inexistente" (o sea, ruta y JWT correctos, 404 de aplicación), la fila tenía `is_deleted = true` junto con su columna y su proyecto, y el conteo de rutas del log no registraba **ningún** `GET` de tablero tras el reinicio: solo el login entraba, porque es `POST` y los `POST` no se cachean. `immutable` agrava el cuadro: instruye al navegador a no revalidar **ni con F5**, así que el fix del servidor no basta y hay que limpiar la caché ya emitida.
+
+Más grave que el bug funcional es el lado de seguridad: `public` autoriza a cualquier proxy compartido a almacenar respuestas de un usuario autenticado y servirlas a otro. Entra en el checklist OWASP de `METODOLOGIA.md` §9.3 y no se había contemplado.
+
+**Decisión:** `~^/api/` y `~^/hubs/` se agregan al `map` con `no-store`. Se mantiene el `map` en vez de un `add_header` por `location` por el mismo motivo de herencia de arriba — la alternativa habría vuelto a apagar las cabeceras de seguridad, esta vez en las respuestas de la API. `no-store` y no `no-cache`: son datos autenticados y no deben quedar en disco, ni siquiera para revalidar. `/hubs/` se incluye aunque el handshake de SignalR sea `POST`, porque si el WebSocket no está disponible el cliente degrada a **long-polling por `GET`** y un `max-age` de un año dejaría el tiempo real muerto de una forma difícil de diagnosticar.
+
+**Lección de método (segunda de esta misma rama, misma raíz):** la verificación del §26.9 falló por comprobar solo las rutas que el cambio pretendía afectar, no todas las que la directiva alcanzaba. En nginx, el alcance real de una directiva heredada es el `server` completo — cualquier verificación de cabeceras tiene que cubrir una ruta de cada `location`, incluidos los de proxy.
+
+### 26.10 Verificación
+
+- `ng test --watch=false`: **74/74** specs.
+- `dotnet build GestionProyectos.sln`: sin errores ni warnings.
+- **Cabeceras `Cache-Control` por clase de ruta**, tras la regresión del §26.9, con `curl` contra el stack real y cubriendo **un `location` de cada tipo**: `/` y `/index.html` → `no-cache, must-revalidate`; `main.<hash>.js` → `public, max-age=31536000, immutable`; `/api/projects` y `/hubs/board/negotiate` → `no-store`. En las cinco, las cinco cabeceras de seguridad del §26.1 siguen presentes (la herencia no se rompió). Confirmado también sobre un `200` autenticado real, no solo sobre el `401`: `GET /api/projects` con `Bearer` válido devuelve `no-store` y **solo** el proyecto semilla, es decir, los proyectos borrados que el navegador seguía mostrando venían exclusivamente de su caché.
+- **Verificación end-to-end contra el stack real de `docker compose`** (no solo `ng serve`, precisamente por la lección del §26.1), con la caché del navegador forzada a saltarse en cada medición: geometría del login idéntica a la de `main` (`getBoundingClientRect` sobre cinco elementos); validación de cliente bloqueando el submit sin emitir petición HTTP; login completo hasta `/projects`; layout Sakai correcto; `app-notifications`/`p-toast`/`p-confirmDialog` presentes **exactamente una vez** en el DOM; diálogo de confirmación abriéndose desde el servicio singleton y cancelándose sin borrar datos; tablero renderizando columnas y tarjetas; y **SignalR conectando bajo la CSP** — confirmado por el indicador de presencia poblado, que exige WebSocket activo, `JoinBoard` y evento `BoardPresenceChanged` recibido. Cero errores y cero violaciones de CSP en consola.
+
+---
+
+## 27. Hallazgos de una sesión de pruebas manuales (fix/frontend-security-hardening)
+
+Santiago probó la aplicación a mano contra el stack de `docker compose` y trajo tres observaciones. Cada una se verificó empíricamente contra la API antes de decidir nada — dos resultaron ciertas, una se descartó con argumento y la tercera reveló que el problema estaba en un sitio distinto al que parecía.
+
+### 27.1 Dos columnas pueden compartir `Order` — el orden del tablero era no determinista
+
+Salió como efecto colateral de probar los nombres duplicados: `POST /api/projects/{id}/columns` con `order: 1` dos veces devuelve `201` las dos veces. El `Order` de una columna **lo elige el cliente** (`CreateColumnRequest(string Name, int Order)`), no hay validación de unicidad ni índice que lo impida, y `ColumnRepository.ListByProjectAsync` ordenaba con un `.OrderBy(c => c.Order)` a secas.
+
+Sin un segundo criterio, PostgreSQL no garantiza orden estable entre filas empatadas: el tablero podía intercambiar dos columnas de sitio entre dos cargas **sin que nadie las tocara**. Es un bug peor que el nombre repetido que motivó la revisión, porque es visible y se diagnostica mal (parece un fallo de tiempo real o de caché).
+
+**Decisión:** `.ThenBy(c => c.Id)`. El `Id` es un criterio arbitrario, pero en un empate cualquier criterio es arbitrario — lo único que importa es que sea **estable**. Se prefirió sobre `.ThenBy(c => c.Name)` porque, al no validarse la unicidad del nombre (§27.4), dos columnas pueden empatar también en nombre y el problema volvería.
+
+**Alternativa descartada — impedir el `Order` duplicado (validación o índice único):** habría dejado el ordenamiento igual de frágil ante cualquier otro empate y exige migración; además el `Order` de columnas se reasigna al reordenar, y un índice único obligaría a orquestar la actualización para no violar la restricción a mitad del cambio. El desempate en la consulta resuelve el síntoma real (inestabilidad) sin restringir el modelo.
+
+### 27.2 Borrar un proyecto con otra sesión mirando el tablero — el backend ya estaba bien, el frontend no
+
+Escenario reproducido: la sesión B tiene el tablero cargado, la sesión A borra el proyecto. Resultado medido sobre la API, con B intentando seguir trabajando:
+
+| Acción de la sesión B tras el borrado | Respuesta |
+|---|---|
+| Recargar el tablero / listar columnas / pedir el proyecto | `404` |
+| Crear una tarea en la columna que sigue en su pantalla | `404` "Columna no encontrada." |
+| Renombrar esa columna | `404` |
+| **Tareas huérfanas creadas en base de datos** | **0** |
+
+Tres capas ya construidas explican el resultado, y ninguna depende del cliente: el guard de negocio de `DeleteProjectCommandHandler` (no se puede borrar un proyecto con tareas, `409`), el soft-delete en cascada dentro de transacción explícita, y el `HasQueryFilter` global que vuelve invisible lo borrado para toda consulta (§7). **La integridad no estaba en riesgo en ningún momento.**
+
+Lo que sí faltaba era la reacción del cliente: `BoardComponent.loadBoard` trataba todos los errores igual — un toast genérico "No se pudo cargar el tablero" y `this.board` intacto — así que B se quedaba mirando un tablero fantasma, con columnas que ya rechazaban toda mutación y sin ninguna salida.
+
+**Decisión:** distinguir el `404` del resto. Ante `404`, aviso explícito ("Este proyecto ya no existe. Puede que otra sesión lo haya eliminado.") y `router.navigate(['/projects'])`. Cualquier otro error mantiene al usuario donde está, porque un `500` o una caída de red son transitorios y expulsarlo del tablero sería peor que dejarlo reintentar. El toast sobrevive a la navegación porque `p-toast` vive en el host raíz, fuera del `router-outlet` — consecuencia directa del refactor de `shared/` del §26.4.
+
+**Ruido conocido y no corregido, detectado al verificar en navegador:** `ngOnInit` lanza `loadBoard()` y `connectRealtime()` en paralelo, así que ante un proyecto inexistente el usuario recibe **dos** avisos — el del `404` (útil) y un "Tiempo real no disponible" (irrelevante: a nadie le importa el canal en vivo de un proyecto que ya no existe), porque el `JoinBoard` del hub también falla. Se evaluó conectar el tiempo real solo tras el éxito de `loadBoard`, y se descartó: reordenar el arranque del componente más complejo de la app, a dos días del cierre, por un toast redundante en un camino de error, y además empeoraría el caso del error transitorio (con un `500` el usuario se queda en el tablero por diseño, y hoy al menos conserva el canal en vivo). Confirmado que es específico de este caso: en un tablero válido la carga es limpia, con cero toasts y presencia de SignalR activa.
+
+**Alternativa descartada — emitir `ProjectDeleted` por SignalR para que la otra sesión salga en el momento:** es la solución completa y se descarta a conciencia, no por olvido. El §15.5 definió el alcance del canal de tiempo real como cuatro eventos de `Task`, que es lo que el enunciado pide reflejar en vivo (el tablero); el CRUD de proyectos nunca estuvo en ese canal. Ampliarlo obliga a tocar el outbox — la pieza que ya funciona y ya está probada — a dos días del cierre, y el sistema ya degrada de forma segura y explícita sin ello. Queda identificada y acotada como mejora, no como pendiente silencioso.
+
+### 27.3 La blocklist de JWT revocados crecía para siempre
+
+Encontrado al verificar el aislamiento de sesiones del §27.6: `TokenRevocationStore.RevokeAsync` persistía el `jti` con su `ExpiresAtUtc`, pero **nadie leía nunca ese campo**. `IsRevokedAsync` solo comprueba la existencia del `jti`, así que la tabla acumulaba una fila por logout, indefinidamente. Esas filas son inútiles pasado el `exp`: un JWT expirado ya lo rechaza la validación de firma, sin consultar la blocklist.
+
+**Decisión:** purga oportunista en `RevokeAsync` — un `ExecuteDeleteAsync` de las filas ya expiradas antes de insertar la nueva. Corre en la operación menos frecuente del sistema (un logout) y fuera del `SaveChanges` del Handler: si este falla, lo único perdido son filas que ya no protegían nada.
+
+**Alternativa descartada — un `BackgroundService` de purga periódica:** es la solución de libro y sería la correcta con volumen alto, pero aquí significa introducir un servicio hospedado, su intervalo, su manejo de fallos y su registro en DI para un problema que cabe en una consulta. Mismo criterio de no sobre-ingeniería que ya rige el resto del proyecto (§15.4, §26.8).
+
+### 27.4 Nombre de columna duplicado — hueco real, corrección descartada por costo/beneficio
+
+Verificado: dos columnas "Por hacer" en el mismo proyecto devuelven `201`, mientras que dos proyectos con el mismo nombre devuelven `409`. La inconsistencia es real — `CreateProjectCommandHandler` valida con `ExistsByNameAsync` y además tiene índice único filtrado por `NOT is_deleted` (§9), y `CreateColumnCommandHandler` no valida nada.
+
+**Decisión (tomada por Santiago tras presentarle el costo):** no implementarlo. Corregirlo bien exige repositorio + validación en el Handler + índice único `(project_id, name)` filtrado por `NOT is_deleted` + migración + tests, a dos días del cierre y con el video de sustentación pendiente. Sin unicidad, el perjuicio real es ambigüedad visual: dos columnas homónimas siguen siendo entidades distintas con `Id` propio, ninguna operación se vuelve ambigua para el sistema, y la inestabilidad de orden que sí era un bug quedó resuelta por separado en el §27.1.
+
+Se registra aquí para que la asimetría con `Project` sea una decisión consultable y no un descuido: el ámbito correcto sería `(project_id, name)` — no global, dos proyectos distintos deben poder tener su columna "Por hacer" — y el patrón a seguir es el que ya usa `Project`.
+
+### 27.5 Título de tarea duplicado — descartado por diseño, no por costo
+
+Santiago planteó la duda con dudas propias ("ni una tarea creería"), y acertó al dudar. **No debe validarse.** Títulos repetidos son semánticamente legítimos en un gestor de tareas: "Revisar PR" o "Actualizar dependencias" se repiten entre sprints y columnas. Ningún gestor de referencia (Jira, Trello, Linear, Asana) lo impide. La restricción bloquearía al usuario sin aportar integridad — la identidad de una tarea ya la da su `Id` — y en una revisión técnica se leería como sobre-restricción, no como rigor. Verificado que hoy devuelve `201` las dos veces, que es el comportamiento correcto.
+
+### 27.6 Dos sesiones simultáneas en el mismo navegador — comportamiento correcto, verificado
+
+Santiago observó que dos pestañas mantienen sesiones independientes y que cerrar una no cierra la otra, y preguntó si era criticable. No lo es, y se verificó en vez de suponerlo:
+
+```
+Pestaña A y B, mismo usuario, tokens distintos: SI
+antes del logout    -> A: 200   B: 200
+logout SOLO en A    -> 204
+después del logout  -> A: 401   B: 200
+```
+
+Es la consecuencia esperada de `sessionStorage` (§17), que el estándar aísla por contexto de navegación. Cada login emite un JWT con su propio `jti` y el logout revoca **solo ese** `jti` (§16) — que A pase a `401` demuestra que la revocación es real y no cosmética; que B siga viva es correcto, porque es otro token emitido por otro login. Cerrar sesión en un dispositivo no cierra los demás, igual que en cualquier aplicación real. Revocar todas las sesiones de un usuario es una funcionalidad distinta y explícita que el enunciado no pide.
+
+### 27.7 Verificación
+
+- `dotnet build GestionProyectos.sln`: sin errores ni warnings.
+- `dotnet test`: **170/170** — 155 unitarios y 15 de integración, con 4 nuevos: dos de `ColumnRepositoryTests` (orden estable con `Order` empatado, y que el desempate no pise el criterio principal) y dos de `TokenRevocationStoreTests` (la purga descarta los expirados **y conserva los vigentes** — una purga demasiado ancha desactivaría el logout entero). Los cuatro exigen Postgres real: `ExecuteDeleteAsync` no pasa por el `ChangeTracker` y el orden de un `ORDER BY` sin desempate lo decide el motor, no EF.
+- `ng test --watch=false`: **76/76**, con 2 nuevos sobre `loadBoard` — el `404` navega a `/projects` con aviso, y un `500` avisa sin mover al usuario.
+- **Verificación en navegador contra el stack real de `docker compose`**, no solo por specs (lección del §26.1), midiendo el DOM en vez de mirar la pantalla:
+  - Entrando a `/board/{id}` de un proyecto realmente borrado: la URL termina en `/projects`, el toast es `p-toast-message-warn` con "Proyecto no disponible / Este proyecto ya no existe. Puede que otra sesión lo haya eliminado.", y **no queda ningún tablero renderizado** (cero contenedores `cdkDropList`). El toast sigue visible después de la navegación, lo que confirma que el host raíz del §26.4 hace su trabajo.
+  - Contraste con un tablero válido: cero toasts, 4 columnas, 16 tarjetas y el indicador de presencia poblado — es decir, el aviso de tiempo real del caso anterior es específico del proyecto inexistente y **no** una regresión de SignalR.
+
+---
+
+## 28. Tarjetas fantasma en el tablero — sincronización de tiempo real (fix/frontend-security-hardening)
+
+Santiago reportó, con dos ventanas abiertas sobre el mismo tablero, una alerta repetida "Tarea no encontrada., se revirtió el cambio." y lo atribuyó al outbox ("muchas alertas que antes no existían"). La correlación temporal era correcta; la causa no era el outbox.
+
+**Descartado primero, con datos:** el outbox no estaba reemitiendo eventos viejos — 74 mensajes, **0 pendientes, 74 procesados**, y `ClaimBatchAsync` marca procesado dentro de la misma transacción del claim, así que un reinicio de la API no reproduce nada.
+
+**Diagnóstico real, reconstruido desde los logs.** La tarea que fallaba era `e2000000-…0007` ("Fase 2"), borrada a las 02:47:12 con un evento `TaskDeleted{ColumnId: …0003}` (Review, su posición en la base). Veinticuatro segundos después, tres `PATCH /move` sobre esa misma tarea devolvieron `404` — desde una ventana que seguía pintándola en "En progreso", con el WebSocket abierto todo el tiempo. El evento de borrado había llegado y no había hecho nada.
+
+### 28.1 La causa: los handlers confiaban en el `columnId` del evento
+
+`applyRemoteTaskDeleted` buscaba la columna por `payload.columnId` y filtraba **solo** ahí. Como el cliente tenía la tarea en otra columna, no la encontraba y no la borraba de ninguna parte: tarjeta fantasma permanente, y `404` en cada intento de moverla.
+
+Lo delator es que dos líneas más abajo `applyRemoteTaskMoved` ya hacía lo correcto — recorrer todas las columnas buscando por id. El bug era una inconsistencia del archivo consigo mismo.
+
+Revisados los demás handlers a pedido de Santiago ("¿y con editar, crear y mover también?"), la respuesta fue sí: era una familia de cinco, no un caso aislado.
+
+| Punto | Síntoma antes del fix |
+|---|---|
+| `applyRemoteTaskDeleted` | Tarjeta fantasma y `404` en cada reintento — **el caso reportado** |
+| `replaceTaskInPlace` (evento `TaskUpdated`) | La edición se descartaba **en silencio**: sin alerta y sin cambio visible |
+| `applyRemoteTaskCreated` | El guard de duplicado solo miraba la columna del evento; la misma tarea podía renderizarse dos veces |
+| `applyRemoteTaskMoved` | Si la columna destino no existía localmente, quitaba la tarea y no la reinsertaba: desaparecía del tablero |
+| `deleteTask` (borrado local) | Usaba `task.columnId`, pero el drag&drop de CDK mueve el elemento de array **sin** reescribir ese campo: borrar justo después de arrastrar dejaba la tarjeta en pantalla |
+
+**Decisión:** un único `findTaskLocation(taskId)` que recorre todo el tablero y devuelve `{ column, index }`, usado por los cinco. El estado local se indexa por **id**, que es la única identidad estable de una tarea; la columna es un dato derivado que puede divergir por causas legítimas — un evento perdido en una reconexión, la latencia del poller del outbox, o un movimiento optimista aún sin confirmar. En `applyRemoteTaskMoved` se añade además una guarda: sin columna destino conocida se aborta **antes** de quitar la tarea, porque una tarjeta en su sitio viejo es un error mucho más benigno que una tarjeta ausente. En `replaceTaskInPlace` se respeta a propósito la posición local: editar no traslada, y mover la tarjeta ahí pisaría un traslado que este cliente todavía no haya visto.
+
+**Por qué apareció con el outbox y no antes.** Antes de §24 el notificador corría dentro del request HTTP: cliente y servidor divergían por milisegundos. Con el outbox hay un poller intermedio, y esa latencia ensancha la ventana en la que el `columnId` del servidor y la posición local difieren — que es la condición exacta que activaba el bug. El defecto existía desde la Fase 4; el outbox lo volvió cotidiano. Es un buen recordatorio de que introducir asincronía no crea bugs nuevos, revela los que asumían sincronía.
+
+### 28.2 Un `404` al mover no debe revertir: debe resincronizar
+
+`onDrop` revertía con el snapshot y avisaba, dejando la tarjeta fantasma en pantalla. El usuario reintentaba, otra alerta, y otra — de ahí las "muchas alertas": tres intentos a las 02:47:36, :43 y :50. El sistema devolvía al usuario al mismo estado imposible.
+
+**Decisión:** ante `404` (tarea o columna destino inexistentes) se resincroniza el tablero en vez de revertir. Un `404` no prueba que ese traslado fallara: prueba que esta copia del tablero **perdió eventos**. Cualquier otro error (`409`, `500`, red) sí revierte, porque es transitorio y expulsar al usuario de su contexto sería peor que dejarlo reintentar.
+
+**Sobre el requisito de "sin recarga manual" (enunciado §6.7), planteado por Santiago antes de aprobar el cambio.** No hay conflicto, por dos razones. Primera: `loadBoard()` es un `GET` que actualiza el estado en memoria de la SPA — no hay recarga de página, no se reinicia Angular, no se cae la conexión de SignalR, no se pierden los filtros ni la búsqueda. Segunda, y decisiva: el adjetivo del enunciado es **manual**, y lo que prohíbe es que el usuario tenga que intervenir para ver la realidad. Un resync automático es lo contrario de una recarga manual. De hecho el comportamiento **anterior** era el que rozaba el incumplimiento: la tarjeta fantasma no desaparecía nunca por sí sola y la única salida del usuario era pulsar F5. El canal de propagación sigue siendo SignalR, dentro de los dos segundos que pide §6.7; el refetch es recuperación de error, no el mecanismo de propagación.
+
+**Alternativa descartada — quitar solo esa tarjeta del estado local en vez de resincronizar:** más quirúrgica y sin peticiones, pero corrige el síntoma y no la causa. Un `404` no informa únicamente de que esa tarea murió: informa de que se perdieron eventos, y si se perdió uno probablemente se perdieron más. El resto de la divergencia quedaría intacta, esperando.
+
+Se corrige además la doble puntuación visible en el reporte de Santiago ("Tarea no encontrada**.**, se revirtió el cambio."): el mensaje del servidor ya trae punto final y la plantilla añadía otro.
+
+### 28.3 Resincronización al reconectar — la causa de fondo
+
+`withAutomaticReconnect()` reconectaba y `onreconnected` volvía a pedir la membresía del grupo, pero **nadie recargaba el tablero**. SignalR no almacena ni reenvía los eventos emitidos mientras un cliente está caído: se pierden por definición. El cliente volvía al grupo con un estado desfasado y sin ninguna forma de deducirlo desde el propio canal — quedaba desincronizado indefinidamente, generando exactamente las divergencias de columna del §28.1.
+
+**Decisión:** el servicio expone `reconnected$`, que emite **después** de que el `JoinBoard` haya resuelto (así el refetch no se pierde los eventos que lleguen entre ambos), y `BoardComponent` responde con un `loadBoard()`. Se dispara por reconexión, no por intervalo: **no es polling**, distinción que importa porque un `GET` periódico sí sería una forma de eludir el requisito de tiempo real, y uno por reconexión no.
+
+Este punto no depende de interpretar el enunciado: ningún canal de tiempo real puede entregar eventos a un cliente desconectado, así que resincronizar al reconectar es la única manera de que la promesa de §6.7 sobreviva a una caída de red. Es lo que hacen Slack, Linear, Figma y Jira.
+
+### 28.4 Verificación
+
+- `ng test --watch=false`: **84/84** specs (76 antes, 8 nuevos) — uno por cada punto de la tabla del §28.1, más el resync por reconexión, el `404` que resincroniza y el error no-`404` que revierte sin duplicar el punto del mensaje.
+- **Reproducción end-to-end del bug original y su corrección**, con dos sesiones reales (`Evaluador` y `Luis Rentería`) sobre el mismo tablero, ambas con presencia mutua confirmada:
+  1. Se crea una tarea en `Backlog`; ambas sesiones la ven aparecer.
+  2. Se mueve a `Review` enviando el `X-Realtime-Connection-Id` **de la sesión B**, que el backend excluye del evento (§15.3) — así se reproduce con exactitud un evento perdido.
+  3. Divergencia medida sobre el DOM: la sesión B la tiene en **columna índice 0 (Backlog)**, el servidor en **índice 2 (Review)**. Este es el estado que producía las tarjetas fantasma.
+  4. Se borra la tarea sin excluir a nadie: la sesión B recibe `TaskDeleted{ColumnId: Review}` teniéndola pintada en `Backlog`, el escenario que antes fallaba. **La tarjeta desaparece** y el total vuelve de 15 a 14 tarjetas, sin recarga y con la misma URL.
+- **Resync por reconexión, con una caída real** provocada reiniciando el contenedor de la API. Traza de red de la sesión B, sin navegación intermedia: `GET …/board 200` (carga inicial) → `POST negotiate 200` → `POST negotiate` **502** (la API estaba caída) → `POST negotiate 200` (reconectado) → `GET …/board 200` (**el resync**). Una sola petición extra, después del `negotiate`, no periódica.

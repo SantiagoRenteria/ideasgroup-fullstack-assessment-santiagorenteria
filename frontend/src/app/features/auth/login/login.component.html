@@ -8,12 +8,14 @@
                     <span class="text-600 font-medium">Inicia sesión para continuar</span>
                 </div>
 
-                <form (ngSubmit)="onSubmit()">
+                <form [formGroup]="form" (ngSubmit)="onSubmit()">
                     <label for="email1" class="block text-900 text-xl font-medium mb-2">Correo</label>
-                    <input id="email1" type="text" name="email" placeholder="Correo electrónico" pInputText class="w-full md:w-30rem mb-5" style="padding:1rem" [(ngModel)]="email">
+                    <input id="email1" type="text" placeholder="Correo electrónico" pInputText class="w-full md:w-30rem mb-2" style="padding:1rem" formControlName="email" autocomplete="username">
+                    <small class="p-error block mb-3" *ngIf="submitted && form.get('email')?.invalid">Ingresá un correo válido.</small>
 
                     <label for="password1" class="block text-900 font-medium text-xl mb-2">Contraseña</label>
-                    <p-password id="password1" name="password" [(ngModel)]="password" placeholder="Contraseña" [toggleMask]="true" [feedback]="false" styleClass="mb-3" inputStyleClass="w-full p-3 md:w-30rem"></p-password>
+                    <p-password id="password1" formControlName="password" placeholder="Contraseña" [toggleMask]="true" [feedback]="false" styleClass="mb-2" inputStyleClass="w-full p-3 md:w-30rem" [inputStyle]="{ 'width': '100%' }"></p-password>
+                    <small class="p-error block mb-3" *ngIf="submitted && form.get('password')?.invalid">La contraseña es obligatoria.</small>
 
                     <small class="p-error block mb-3" *ngIf="error">{{ error }}</small>
 
