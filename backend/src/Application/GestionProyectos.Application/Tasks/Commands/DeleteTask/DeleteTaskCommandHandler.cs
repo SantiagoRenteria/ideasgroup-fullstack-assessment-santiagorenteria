@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Common.Outbox;
 using GestionProyectos.Domain.Common;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -14,20 +15,23 @@ public class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand, Resul
     private readonly ITaskRepository _taskRepository;
     private readonly IColumnRepository _columnRepository;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IBoardNotifier _boardNotifier;
+    private readonly IOutboxWriter _outboxWriter;
+    private readonly IOutboxSignal _outboxSignal;
     private readonly ILogger<DeleteTaskCommandHandler> _logger;
 
     public DeleteTaskCommandHandler(
         ITaskRepository taskRepository,
         IColumnRepository columnRepository,
         IUnitOfWork unitOfWork,
-        IBoardNotifier boardNotifier,
+        IOutboxWriter outboxWriter,
+        IOutboxSignal outboxSignal,
         ILogger<DeleteTaskCommandHandler> logger)
     {
         _taskRepository = taskRepository;
         _columnRepository = columnRepository;
         _unitOfWork = unitOfWork;
-        _boardNotifier = boardNotifier;
+        _outboxWriter = outboxWriter;
+        _outboxSignal = outboxSignal;
         _logger = logger;
     }
 
@@ -44,6 +48,13 @@ public class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand, Resul
         var columnId = task.ColumnId;
         task.Delete();
 
+        var column = await _columnRepository.GetByIdAsync(columnId, cancellationToken);
+        if (column is not null)
+        {
+            var payload = new TaskDeletedOutboxPayload(task.Id, columnId);
+            _outboxWriter.Enqueue(OutboxEventTypes.TaskDeleted, column.ProjectId, payload, request.ConnectionId);
+        }
+
         try
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -54,9 +65,7 @@ public class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand, Resul
             return Result.Failure(ConcurrencyConflict, ErrorType.Conflict);
         }
 
-        var column = await _columnRepository.GetByIdAsync(columnId, cancellationToken);
-        if (column is not null)
-            await _boardNotifier.TaskDeletedAsync(column.ProjectId, task.Id, columnId, request.ConnectionId, cancellationToken);
+        _outboxSignal.Signal();
 
         return Result.Success();
     }

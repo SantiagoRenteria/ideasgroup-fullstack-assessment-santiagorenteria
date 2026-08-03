@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Common.Outbox;
 using GestionProyectos.Domain.Common;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -14,20 +15,23 @@ public class UpdateTaskCommandHandler : IRequestHandler<UpdateTaskCommand, Resul
     private readonly ITaskRepository _taskRepository;
     private readonly IColumnRepository _columnRepository;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IBoardNotifier _boardNotifier;
+    private readonly IOutboxWriter _outboxWriter;
+    private readonly IOutboxSignal _outboxSignal;
     private readonly ILogger<UpdateTaskCommandHandler> _logger;
 
     public UpdateTaskCommandHandler(
         ITaskRepository taskRepository,
         IColumnRepository columnRepository,
         IUnitOfWork unitOfWork,
-        IBoardNotifier boardNotifier,
+        IOutboxWriter outboxWriter,
+        IOutboxSignal outboxSignal,
         ILogger<UpdateTaskCommandHandler> logger)
     {
         _taskRepository = taskRepository;
         _columnRepository = columnRepository;
         _unitOfWork = unitOfWork;
-        _boardNotifier = boardNotifier;
+        _outboxWriter = outboxWriter;
+        _outboxSignal = outboxSignal;
         _logger = logger;
     }
 
@@ -43,6 +47,11 @@ public class UpdateTaskCommandHandler : IRequestHandler<UpdateTaskCommand, Resul
 
         task.Update(request.Title, request.Description, request.Priority, request.AssigneeId);
 
+        var dto = task.ToDto();
+        var column = await _columnRepository.GetByIdAsync(task.ColumnId, cancellationToken);
+        if (column is not null)
+            _outboxWriter.Enqueue(OutboxEventTypes.TaskUpdated, column.ProjectId, dto, request.ConnectionId);
+
         try
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -53,10 +62,7 @@ public class UpdateTaskCommandHandler : IRequestHandler<UpdateTaskCommand, Resul
             return Result<TaskResponseDto>.Failure(ConcurrencyConflict, ErrorType.Conflict);
         }
 
-        var dto = task.ToDto();
-        var column = await _columnRepository.GetByIdAsync(task.ColumnId, cancellationToken);
-        if (column is not null)
-            await _boardNotifier.TaskUpdatedAsync(column.ProjectId, dto, request.ConnectionId, cancellationToken);
+        _outboxSignal.Signal();
 
         return Result<TaskResponseDto>.Success(dto);
     }

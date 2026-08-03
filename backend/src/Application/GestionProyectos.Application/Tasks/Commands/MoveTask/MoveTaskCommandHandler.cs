@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Common.Outbox;
 using GestionProyectos.Domain.Common;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -16,20 +17,23 @@ public class MoveTaskCommandHandler : IRequestHandler<MoveTaskCommand, Result<Ta
     private readonly ITaskRepository _taskRepository;
     private readonly IColumnRepository _columnRepository;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IBoardNotifier _boardNotifier;
+    private readonly IOutboxWriter _outboxWriter;
+    private readonly IOutboxSignal _outboxSignal;
     private readonly ILogger<MoveTaskCommandHandler> _logger;
 
     public MoveTaskCommandHandler(
         ITaskRepository taskRepository,
         IColumnRepository columnRepository,
         IUnitOfWork unitOfWork,
-        IBoardNotifier boardNotifier,
+        IOutboxWriter outboxWriter,
+        IOutboxSignal outboxSignal,
         ILogger<MoveTaskCommandHandler> logger)
     {
         _taskRepository = taskRepository;
         _columnRepository = columnRepository;
         _unitOfWork = unitOfWork;
-        _boardNotifier = boardNotifier;
+        _outboxWriter = outboxWriter;
+        _outboxSignal = outboxSignal;
         _logger = logger;
     }
 
@@ -67,6 +71,10 @@ public class MoveTaskCommandHandler : IRequestHandler<MoveTaskCommand, Result<Ta
 
         task.Move(request.TargetColumnId, order);
 
+        var dto = task.ToDto();
+        var payload = new TaskMovedOutboxPayload(dto, request.TargetIndex);
+        _outboxWriter.Enqueue(OutboxEventTypes.TaskMoved, targetColumn.ProjectId, payload, request.ConnectionId);
+
         try
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -77,8 +85,7 @@ public class MoveTaskCommandHandler : IRequestHandler<MoveTaskCommand, Result<Ta
             return Result<TaskResponseDto>.Failure(ConcurrencyConflict, ErrorType.Conflict);
         }
 
-        var dto = task.ToDto();
-        await _boardNotifier.TaskMovedAsync(targetColumn.ProjectId, dto, request.TargetIndex, request.ConnectionId, cancellationToken);
+        _outboxSignal.Signal();
 
         return Result<TaskResponseDto>.Success(dto);
     }
