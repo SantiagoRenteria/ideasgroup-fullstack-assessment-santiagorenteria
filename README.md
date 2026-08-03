@@ -2,7 +2,7 @@
 
 Aplicativo web para la gestión de proyectos ágiles: proyectos, columnas configurables y tablero kanban con tiempo real, sobre .NET 8 (arquitectura hexagonal) + Angular 17 (PrimeNG/Sakai) + PostgreSQL.
 
-> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-03, al cierre de la auditoría crítica post-entrega (§20-§24 del ADR).
+> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-03, tras completar la colección de Postman (todos los endpoints) y precisar las instrucciones de ejecución.
 
 ---
 
@@ -48,7 +48,7 @@ Este README se actualiza al cierre de cada fase — las secciones marcadas "Pend
 
 ## 2. Instrucciones de ejecución
 
-Requiere Docker y Docker Compose. No requiere instalar .NET, Node ni PostgreSQL localmente.
+Requiere **Docker Desktop** (o Docker Engine + Compose plugin) corriendo. No requiere instalar .NET, Node ni PostgreSQL localmente — todo corre dentro de los contenedores.
 
 ```bash
 git clone https://github.com/SantiagoRenteria/ideasgroup-fullstack-assessment-santiagorenteria.git
@@ -57,16 +57,33 @@ cp .env.example .env
 docker compose up --build
 ```
 
-El `.env.example` ya trae valores por defecto funcionales para un entorno de evaluación local (no son secretos reales — ver advertencia dentro del archivo). Las migraciones de EF Core corren automáticamente al arrancar la API, incluyendo la migración semilla con los 2 usuarios de prueba.
+El `.env.example` ya trae valores por defecto funcionales para un entorno de evaluación local (no son secretos reales — ver advertencia dentro del archivo); no hace falta editar nada para levantar el proyecto. Las migraciones de EF Core corren automáticamente al arrancar la API, incluyendo la migración semilla con los 2 usuarios de prueba.
+
+**Primer arranque:** la build de la imagen del frontend (Angular) y la descarga de las imágenes base tardan **2-4 minutos** la primera vez; arranques posteriores (`docker compose up`, sin `--build`) tardan segundos gracias a la cache de Docker. `db` espera a estar `healthy` antes de que `api` arranque, y `api` espera a estar `healthy` antes de que `spa` arranque (`depends_on: condition: service_healthy` en `docker-compose.yml`) — no hace falta esperar manualmente ni reintentar.
+
+**Verificar que levantó bien:**
+
+```bash
+curl http://localhost:5000/health
+```
+
+Debería responder `Healthy`. Si falla, `docker compose logs api` muestra el log estructurado (Serilog JSON) del arranque, incluyendo si la migración falló.
+
+**Detener el entorno:**
+
+```bash
+docker compose down          # detiene y borra los contenedores, conserva los datos (volumen de Postgres)
+docker compose down -v       # ademas borra el volumen -- el proximo "up" vuelve a aplicar la migracion semilla desde cero
+```
 
 **Servicios y puertos** (configurables en `.env`):
 
 | Servicio | URL | Notas |
 |---|---|---|
-| Frontend (Angular) | http://localhost:4200 | |
+| Frontend (Angular) | http://localhost:4200 | Login con cualquiera de los usuarios semilla de abajo |
 | API (.NET 8) | http://localhost:5000 | |
-| Swagger UI | http://localhost:5000/swagger | Botón "Authorize" para pegar el JWT y probar endpoints protegidos |
-| PostgreSQL | localhost:5432 | |
+| Swagger UI | http://localhost:5000/swagger | Botón "Authorize" para pegar el JWT y probar endpoints protegidos manualmente |
+| PostgreSQL | localhost:5432 | Usuario/contraseña/base de datos en `.env` (`POSTGRES_*`) |
 
 **Usuarios semilla** (migración `InitialCreate`):
 
@@ -75,7 +92,21 @@ El `.env.example` ya trae valores por defecto funcionales para un entorno de eva
 | `luis.renteria@ideasgroup.test` | `IdeasGroup2026!` |
 | `evaluador@ideasgroup.test` | `IdeasGroup2026!` |
 
-**Colección de Postman**: `postman/GestionProyectos.postman_collection.json` + `postman/GestionProyectos.postman_environment.json` (environment "GestionProyectos - Local"). Cubre Auth, Projects y Columns con happy path y casos de error (401/404/409), encadenando automáticamente los IDs creados.
+### 2.1 Probar la API con Postman (sin pasar por el frontend)
+
+`postman/GestionProyectos.postman_collection.json` + `postman/GestionProyectos.postman_environment.json` cubren **todos** los endpoints de la API: Auth (login + logout), Users, Projects, Columns, Board, Tasks (create/update/move/delete) y Reports (PDF/Excel) — happy path y casos de error (400/401/404/409), encadenando automáticamente los IDs creados (`projectId`, `columnId`, `taskId`) de un request al siguiente.
+
+**Importar y correr (Postman Desktop/Web):**
+1. `Import` → seleccionar ambos archivos JSON (la colección y el environment).
+2. Elegir el environment **"GestionProyectos - Local"** en el selector superior derecho.
+3. Con el stack ya levantado (`docker compose up`), correr la colección completa: click derecho sobre "GestionProyectos API" → **Run collection** → Run. El orden de las carpetas ya está pensado para que cada paso deje los datos que el siguiente necesita, y `Cleanup` (al final) borra todo lo creado y cierra la sesión.
+4. También se puede correr request por request en el orden de las carpetas (`Auth > Login` primero, siempre).
+
+**Alternativa por línea de comandos (`newman`, sin abrir Postman):**
+
+```bash
+npx newman run postman/GestionProyectos.postman_collection.json -e postman/GestionProyectos.postman_environment.json
+```
 
 ---
 
@@ -237,5 +268,7 @@ Partes del desarrollo donde se usó:
 - **Pruebas unitarias**: backend (xUnit + NSubstitute) y frontend (Jasmine/Karma), incluyendo casos borde más allá del mínimo exigido.
 - **Refactors dirigidos**: retrofit de nomenclatura de dominio al inglés, reestructuración de Application por Commands/Queries, corrección de un bug real de la API (filtro `status` vacío) detectado al construir y correr la colección de Postman con Newman.
 - **Revisión crítica**: el asistente fue instruido para cuestionar decisiones (no solo ejecutar pedidos) y documentar el porqué de cada cambio de rumbo — visible en las secciones "Decisión superada" del ADR.
+- **Auditoría crítica post-entrega** (§20-§24 del ADR): con el proyecto ya completo, se le pidió al asistente actuar como evaluador senior (no instructor) y señalar defectos reales, no cosméticos. De ahí salieron los 5 puntos priorizados de más sencillo a más difícil (Result tipado, logging transversal, Value Objects + límites de agregado, tests de integración, Outbox Pattern), cada uno en su propia rama con issue y PR — incluyendo casos donde el asistente cuestionó la primera propuesta del desarrollador (ej. Domain Events y RabbitMQ para el Outbox, descartados con motivo concreto en vez de aceptados sin más) o la propia (colapsar a un solo agregado, descartado por riesgo de romper la edición concurrente real).
+- **Completar la colección de Postman**: se agregó cobertura de los endpoints que faltaban (Users, Board, Tasks, Reports, Logout) y se corrió con Newman antes de dar el trabajo por cerrado — eso detectó que las fechas hardcodeadas de `Create Project`/`Update Project` ya habían quedado en el pasado respecto a la fecha real del sistema (la regla de negocio rechaza un `startDate` anterior a hoy), rompiendo la colección completa en cascada. Se corrigió con un pre-request script que calcula fechas relativas a "ahora", en vez de fechas fijas que se vuelven a romper con el tiempo.
 
 Toda decisión de arquitectura o de negocio fue revisada y aprobada explícitamente por el desarrollador antes de implementarse; el asistente no tomó decisiones de diseño de forma autónoma.
