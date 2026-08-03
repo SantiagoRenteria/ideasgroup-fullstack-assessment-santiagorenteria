@@ -2,7 +2,7 @@
     "info": {
         "_postman_id": "a1e6f0a0-1234-4c9a-8b1a-gestionproyectos-coll",
         "name": "GestionProyectos API",
-        "description": "Coleccion manual para probar la API de GestionProyectos (IDEASGROUP-REM-LAT-26-2907) contra el entorno levantado con docker compose. Usar el environment 'GestionProyectos - Local'.\n\nFlujo sugerido: correr 'Login' primero (guarda el token automaticamente), luego 'Projects > Create Project' (guarda projectId), luego 'Columns > Create Column' (guarda columnId). El resto de los requests ya quedan encadenados a esas variables.",
+        "description": "Coleccion manual para probar la API de GestionProyectos (IDEASGROUP-REM-LAT-26-2907) contra el entorno levantado con docker compose. Usar el environment 'GestionProyectos - Local'.\n\nFlujo sugerido (correr la coleccion completa de punta a punta, en este orden): 'Auth > Login' (guarda el token), 'Projects > Create Project' (guarda projectId), 'Columns > Create Column' (guarda columnId), 'Tasks > Create Task' (guarda taskId). El resto de los requests ya quedan encadenados a esas variables. 'Cleanup' borra la tarea/columna/proyecto de prueba y cierra la sesion (Logout) al final -- por eso Logout no esta en 'Auth': si corriera ahi, invalidaria el token antes de que el resto de los folders pudiera usarlo.",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "auth": {
@@ -84,6 +84,39 @@
             ]
         },
         {
+            "name": "Users",
+            "item": [
+                {
+                    "name": "List Users",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/users",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["users"]
+                        },
+                        "description": "Solo lectura: alimenta el selector de 'responsable' del formulario de tareas (seccion 6.5). Sin CRUD de usuarios en el alcance del enunciado."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                                    "const body = pm.response.json();",
+                                    "pm.test('devuelve un array de usuarios', () => pm.expect(body).to.be.an('array'));",
+                                    "if (Array.isArray(body) && body.length > 0) {",
+                                    "  pm.environment.set('userId', body[0].id);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "name": "Projects",
             "item": [
                 {
@@ -95,16 +128,30 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"name\": \"Migracion ERP\",\n  \"description\": \"Proyecto de prueba creado desde Postman\",\n  \"startDate\": \"2026-01-01\",\n  \"endDate\": \"2026-06-30\",\n  \"status\": \"Planned\"\n}"
+                            "raw": "{\n  \"name\": \"Migracion ERP\",\n  \"description\": \"Proyecto de prueba creado desde Postman\",\n  \"startDate\": \"{{futureStartDate}}\",\n  \"endDate\": \"{{futureEndDate}}\",\n  \"status\": \"Planned\"\n}"
                         },
                         "url": {
                             "raw": "{{baseUrl}}/projects",
                             "host": ["{{baseUrl}}"],
                             "path": ["projects"]
                         },
-                        "description": "status: Planned | InProgress | Completed | Cancelled"
+                        "description": "status: Planned | InProgress | Completed | Cancelled. startDate/endDate se calculan en el pre-request script (nunca hardcodeadas) porque la regla de negocio rechaza una fecha de inicio anterior a hoy -- una fecha fija se hubiera vuelto invalida con el paso del tiempo."
                     },
                     "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const start = new Date();",
+                                    "start.setDate(start.getDate() + 7);",
+                                    "const end = new Date();",
+                                    "end.setDate(end.getDate() + 180);",
+                                    "pm.environment.set('futureStartDate', start.toISOString().slice(0, 10));",
+                                    "pm.environment.set('futureEndDate', end.toISOString().slice(0, 10));"
+                                ]
+                            }
+                        },
                         {
                             "listen": "test",
                             "script": {
@@ -183,13 +230,14 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"name\": \"Migracion ERP (actualizado)\",\n  \"description\": \"Descripcion actualizada desde Postman\",\n  \"startDate\": \"2026-01-01\",\n  \"endDate\": \"2026-08-31\",\n  \"status\": \"InProgress\"\n}"
+                            "raw": "{\n  \"name\": \"Migracion ERP (actualizado)\",\n  \"description\": \"Descripcion actualizada desde Postman\",\n  \"startDate\": \"{{futureStartDate}}\",\n  \"endDate\": \"{{futureEndDate}}\",\n  \"status\": \"InProgress\"\n}"
                         },
                         "url": {
                             "raw": "{{baseUrl}}/projects/{{projectId}}",
                             "host": ["{{baseUrl}}"],
                             "path": ["projects", "{{projectId}}"]
-                        }
+                        },
+                        "description": "Reutiliza futureStartDate/futureEndDate calculadas por 'Create Project' (corre antes en el flujo sugerido de la coleccion)."
                     },
                     "event": [
                         {
@@ -313,7 +361,308 @@
                             }
                         }
                     ]
+                }
+            ]
+        },
+        {
+            "name": "Board",
+            "item": [
+                {
+                    "name": "Get Board",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/{{projectId}}/board",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "{{projectId}}", "board"]
+                        },
+                        "description": "Endpoint agregado de solo lectura (ADR §14.4): columnas del proyecto con sus tareas ya anidadas y ordenadas, en una sola respuesta."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                                    "pm.test('tablero con columnas', () => {",
+                                    "  const body = pm.response.json();",
+                                    "  pm.expect(body).to.have.property('columns');",
+                                    "  pm.expect(body.columns).to.be.an('array');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Tasks",
+            "item": [
+                {
+                    "name": "Create Task",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"columnId\": \"{{columnId}}\",\n  \"title\": \"Definir alcance del modulo de reportes\",\n  \"description\": \"Tarea de prueba creada desde Postman\",\n  \"priority\": \"Medium\",\n  \"assigneeId\": null\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/tasks",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["tasks"]
+                        },
+                        "description": "priority: Low | Medium | High | Urgent. Requiere que {{columnId}} este seteado (correr 'Columns > Create Column' primero). Siempre se agrega al final de la columna (seccion 6.5)."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                                    "const body = pm.response.json();",
+                                    "pm.environment.set('taskId', body.id);",
+                                    "pm.test('taskId guardado en el environment', () => pm.expect(body.id).to.be.a('string'));"
+                                ]
+                            }
+                        }
+                    ]
                 },
+                {
+                    "name": "Create Task - Columna no encontrada (404)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"columnId\": \"11111111-1111-1111-1111-111111111111\",\n  \"title\": \"No deberia crearse\",\n  \"description\": \"Columna inexistente\",\n  \"priority\": \"Low\",\n  \"assigneeId\": null\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/tasks",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["tasks"]
+                        },
+                        "description": "GUID no-vacio pero inexistente a proposito: CreateTaskCommandValidator rechaza Guid.Empty (00000000-...) con NotEmpty() antes de llegar al Handler -- eso daria 400 (validacion), no el 404 (negocio) que este caso quiere probar."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Update Task",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"title\": \"Definir alcance del modulo de reportes (actualizado)\",\n  \"description\": \"Descripcion actualizada desde Postman\",\n  \"priority\": \"High\",\n  \"assigneeId\": null\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/tasks/{{taskId}}",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["tasks", "{{taskId}}"]
+                        },
+                        "description": "Edicion de datos de negocio -- distinto de 'Move Task' (traslado por drag&drop, seccion 6.7 y ADR §14.1)."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Move Task",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            { "key": "Content-Type", "value": "application/json" }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"targetColumnId\": \"{{columnId}}\",\n  \"targetIndex\": 0\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/tasks/{{taskId}}/move",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["tasks", "{{taskId}}", "move"]
+                        },
+                        "description": "PATCH, no PUT (ADR §14.1). Mueve la tarea al inicio de la misma columna -- ejercita el calculo de posicion LexoRank (seccion 6.9)."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Delete Task - No encontrada (404)",
+                    "request": {
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/tasks/00000000-0000-0000-0000-000000000000",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["tasks", "00000000-0000-0000-0000-000000000000"]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Delete Task",
+                    "request": {
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/tasks/{{taskId}}",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["tasks", "{{taskId}}"]
+                        },
+                        "description": "Se corre al final de este folder a proposito: deja la columna de prueba sin tareas, para que 'Cleanup > Delete Column' de mas abajo pueda borrarla sin chocar con la regla de negocio de la seccion 6.4 (no borrar columna con tareas)."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Reports",
+            "item": [
+                {
+                    "name": "Export Report - PDF",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/{{projectId}}/report?format=pdf",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "{{projectId}}", "report"],
+                            "query": [
+                                { "key": "format", "value": "pdf" },
+                                { "key": "assigneeId", "value": "", "description": "opcional, filtra por responsable", "disabled": true },
+                                { "key": "priority", "value": "", "description": "opcional: Low | Medium | High | Urgent", "disabled": true }
+                            ]
+                        },
+                        "description": "DTO comun + una sola consulta EF para ambos formatos (ADR §5, §18). Content-Type/Content-Disposition correctos por formato."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                                    "pm.test('Content-Type de PDF', () => {",
+                                    "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export Report - Excel",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/{{projectId}}/report?format=excel",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "{{projectId}}", "report"],
+                            "query": [
+                                { "key": "format", "value": "excel" }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                                    "pm.test('Content-Type de Excel', () => {",
+                                    "  pm.expect(pm.response.headers.get('Content-Type')).to.include('spreadsheetml');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Export Report - Formato invalido (400)",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/projects/{{projectId}}/report?format=csv",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["projects", "{{projectId}}", "report"],
+                            "query": [
+                                { "key": "format", "value": "csv" }
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Cleanup",
+            "description": "Se corre al final a proposito: 'Tasks > Delete Task' ya elimino la tarea de prueba, asi que 'Delete Column' aqui no choca con la regla de negocio de la seccion 6.4 (no borrar columna con tareas). 'Logout' es el ultimo request de toda la coleccion: revoca el token real (blocklist por jti, ADR §16) -- si corriera antes, invalidaria el token que el resto de los folders necesita.",
+            "item": [
                 {
                     "name": "Delete Column",
                     "request": {
@@ -323,7 +672,7 @@
                             "host": ["{{baseUrl}}"],
                             "path": ["columns", "{{columnId}}"]
                         },
-                        "description": "204 si la columna no tiene tareas. 409 si tiene tareas (regla de negocio, seccion 6.4 del enunciado) -- no hay endpoint para crear tareas todavia (Fase 3), asi que en un entorno recien creado esto siempre deberia dar 204."
+                        "description": "204 si la columna no tiene tareas. 409 si tiene tareas (regla de negocio, seccion 6.4 del enunciado) -- 'Tasks > Delete Task' ya elimino la unica tarea de prueba, asi que en un run completo de la coleccion esto siempre deberia dar 204."
                     },
                     "event": [
                         {
@@ -360,13 +709,7 @@
                             }
                         }
                     ]
-                }
-            ]
-        },
-        {
-            "name": "Cleanup",
-            "description": "Se corre al final a proposito: Delete Column ya elimino la columna de prueba en el folder anterior, asi que este paso solo necesita borrar el proyecto. Si se corre toda la coleccion de punta a punta, deja el entorno tan limpio como estaba antes.",
-            "item": [
+                },
                 {
                     "name": "Delete Project",
                     "request": {
@@ -376,7 +719,30 @@
                             "host": ["{{baseUrl}}"],
                             "path": ["projects", "{{projectId}}"]
                         },
-                        "description": "Hard delete en cascada: tambien elimina cualquier columna (y tarea) que haya quedado en el proyecto."
+                        "description": "Soft delete (ADR §13): bloquea con 409 si el proyecto todavia tiene tareas en alguna columna. 'Delete Column' de este mismo folder ya elimino la columna de prueba, asi que en un run completo esto siempre deberia dar 204."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Logout",
+                    "request": {
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/logout",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["auth", "logout"]
+                        },
+                        "description": "Revoca el JWT actual (blocklist por jti, ADR §16) -- ultimo request de la coleccion a proposito, ver la descripcion del folder."
                     },
                     "event": [
                         {

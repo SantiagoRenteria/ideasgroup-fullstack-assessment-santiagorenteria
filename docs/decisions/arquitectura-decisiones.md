@@ -442,6 +442,44 @@ Auditoría contra el checklist de `docs/METODOLOGIA.md` §9.3 encontró 2 de 4 p
 
 ---
 
+## 20. Auditoría post-entrega — Result tipado por ErrorType (fix/typed-result-errors)
+
+Auditoría crítica solicitada explícitamente por Santiago sobre el proyecto ya completo (2026-08-02), pidiendo una revisión de evaluador senior, no de instructor. Se identificaron 5 hallazgos priorizados de más sencillo a más difícil; esta entrada documenta el primero, ya cerrado. Los otros 4 (logging pipeline behavior, Value Object `Email`, tests de integración con Testcontainers, Outbox pattern para la notificación del tablero) se documentan en sus propias entradas al implementarse.
+
+**Problema detectado:** `Result`/`Result<T>` (`Domain/Common/Result.cs`) solo exponía `string? Error`. Cada endpoint mapeaba el status HTTP comparando el **contenido** del mensaje contra una constante del handler (`result.Error == XCommandHandler.SomeConstant ? 409 : 404`), con un `default`/`_` que caía silenciosamente en un status code (404 en la mayoría de endpoints, 400 en `ReportsEndpoints`, sin ningún criterio uniforme entre archivos). Esto significa que un `Result.Failure(nuevoMensaje)` agregado a futuro sin actualizar el switch del endpoint quedaría mal clasificado sin que el compilador, ni ningún test, lo detectaran — un bug silencioso, no una excepción.
+
+**Decisión:** `Result`/`Result<T>` ahora exigen un `ErrorType` (enum: `NotFound`, `Conflict`, `Validation`, `Unauthorized`) en todo `Failure(...)` — no hay overload que lo omita, así que un nuevo `Failure` sin clasificar es un error de compilación, no un 404 silencioso. El mapeo a HTTP status se centralizó en `ResultExtensions.ToErrorResponse()` (API/Endpoints), con un `switch` exhaustivo por `ErrorType` que **lanza una excepción** (no cae a un default silencioso) si algún día aparece un `ErrorType` sin mapear — el fallo se vuelve ruidoso e inmediato, en vez de una respuesta HTTP incorrecta y silenciosa.
+
+**Clasificación aplicada** (23 sitios de `Result.Failure` en 15 handlers, revisados uno a uno contra el comportamiento HTTP ya existente para no cambiar semántica, solo tiparla):
+- `NotFound`: todo "entidad no encontrada" (Project, Column, Task).
+- `Conflict`: reglas de negocio de estado (`ColumnHasTasks`, `ProjectHasTasks`, `DuplicateName`) y conflictos de concurrencia `xmin` (ADR §15.2).
+- `Validation`: `MoveTaskCommandHandler.TargetIndexOutOfRange`, `ExportProjectReportQueryHandler.UnsupportedFormat` — antes ambos caían en el `default` de sus endpoints por rutas distintas (400 uno, 404 el otro sin querer en algún caso), ahora es explícito y uniforme.
+- `Unauthorized`: `LoginCommandHandler.InvalidCredentials`.
+
+**Por qué no una librería de terceros (ErrorOr, FluentResults):** el proyecto ya tiene un `Result` propio, simple, sin dependencias, defendible en la sustentación. Agregar una librería externa para resolver un problema de 4 categorías de error hubiera sido una dependencia nueva sin necesidad real (criterio ya aplicado contra AutoMapper, §1) — la solución tipada in-house cierra el mismo hueco con el mismo código que ya existía, solo con un campo más.
+
+**Cobertura de regresión:** cada test de handler que ya afirmaba `result.Error == constante` ahora también afirma `result.ErrorType == ErrorType.X` — para que un futuro cambio accidental de clasificación (ej. mover `ColumnHasTasks` de `Conflict` a `NotFound` por error) rompa un test, no solo se descubra en producción. `ResultTests.cs` (Domain) cubre además que `Success()` no lleva `ErrorType` y que el tipo se preserva correctamente en `Result` (no genérico) y `Result<T>`.
+
+---
+
+## 21. Auditoría post-entrega — LoggingBehavior transversal (fix/logging-pipeline-behavior)
+
+Segundo de los 5 hallazgos de la auditoría crítica (§20). La tabla de patrones (§3) afirmaba: *"Pipeline Behaviors | MediatR | Validación automática (FluentValidation) **y logging transversal** antes del Handler"*. Hasta esta entrada, solo existía `ValidationBehavior` — el logging real (Fase 7, §6.1) se implementó manualmente dentro de 5 handlers específicos (`LoginCommandHandler` + los 4 de `Tasks`), no como behavior transversal. La tabla describía una arquitectura que el código no tenía.
+
+**Decisión:** en vez de corregir la tabla del §3 para que reflejara "logging manual selectivo", se implementó el `LoggingBehavior<TRequest, TResponse>` que la tabla ya prometía — la documentación es la fuente de verdad del proyecto (regla de `CLAUDE.md`), así que cuando diverge del código, la brecha se cierra en el código, no reescribiendo la promesa a la baja.
+
+**Diseño:**
+- `LoggingBehavior` (`Application/Common/Behaviors`) traza inicio, fin y duración de **todo** request de MediatR a nivel `Debug` — no `Information`, porque es volumen alto (una entrada por cada Command/Query, éxito o fracaso de negocio) y no aporta señal accionable por sí solo; el nivel mínimo configurable por entorno (`Serilog:MinimumLevel`, ya existente desde Fase 7) decide si se emite.
+- Registrado **antes** que `ValidationBehavior` en `DependencyInjection.cs` — cada behavior envuelve al siguiente, así que Logging también traza requests que fallan validación (`ValidationException`), no solo los que llegan al Handler.
+- **Nunca registra el payload del request**, solo `typeof(TRequest).Name` — evita que `LoginCommand` (contiene la contraseña en texto plano antes del hash) quede expuesto en el log si alguien agrega un `ToString()` o serialización automática a futuro. Es una decisión de diseño, no un descuido: un logging transversal genérico que serializara el request completo sería el tipo de código que un evaluador de seguridad marcaría de inmediato.
+- No duplica ni reemplaza los `LogWarning` de negocio ya presentes en los 5 handlers críticos (§6.1): este behavior no conoce el resultado de negocio (`Result.IsSuccess`), solo si el pipeline se completó o lanzó una excepción no controlada — son dos niveles de logging distintos y complementarios, no redundantes. Una excepción real que llegue hasta este behavior (no las de negocio, que ya se resuelven como `Result.Failure` dentro del handler) se loguea a `Error` con el stack trace completo antes de relanzarse, sin swallowearla.
+
+**Alternativa descartada — loguear el objeto `request` completo:** más útil para debugging ad-hoc, pero reintroduce el riesgo de PII/secretos en logs que el propio ADR ya trata como no negociable (§8: hash de contraseña, nunca en texto plano en ningún punto observable). Se descarta a favor de solo el nombre del tipo.
+
+**Cobertura de test:** `LoggingBehaviorTests.cs` verifica el camino feliz (la respuesta de `next()` pasa sin alterarse) y que una excepción de `next()` se relanza intacta (`Assert.Same`), no envuelta ni swallowed. No se verifican las llamadas al logger en sí (`ILogger.Log<TState>` es genérico y frágil de mockear con NSubstitute) — consistente con el resto de la suite, que nunca verifica logging como comportamiento observable, solo el resultado funcional.
+
+---
+
 ## 22. Auditoría post-entrega — Value Objects y límites de agregado (fix/value-objects-and-aggregates)
 
 Tercero de los 5 hallazgos de la auditoría crítica (ver §20, §21). A diferencia de los dos anteriores, este no es un fix acotado a un archivo: toca las cuatro entidades de dominio, la configuración de EF Core y el límite de los agregados. Se documenta explícitamente como **corrección de deuda técnica tras una primera instancia ya validada** — el producto funcionaba de punta a punta (Fases 0-7, §1-§21) antes de esta revisión; esta entrada no es un rediseño especulativo, es el mismo criterio de "primero funciona, después se refina con la información completa del sistema real" que ya se aplicó en §14.2 (xmin diferido) y §15.2 (xmin materializado cuando el escenario real lo exigió).
@@ -538,38 +576,27 @@ La primera migración generada (`AddOutboxMessages`) creó la columna de la clav
 
 ---
 
-## 20. Auditoría post-entrega — Result tipado por ErrorType (fix/typed-result-errors)
+## 25. Colección de Postman completa + coherencia de documentación (fix/postman-collection-coverage)
 
-Auditoría crítica solicitada explícitamente por Santiago sobre el proyecto ya completo (2026-08-02), pidiendo una revisión de evaluador senior, no de instructor. Se identificaron 5 hallazgos priorizados de más sencillo a más difícil; esta entrada documenta el primero, ya cerrado. Los otros 4 (logging pipeline behavior, Value Object `Email`, tests de integración con Testcontainers, Outbox pattern para la notificación del tablero) se documentan en sus propias entradas al implementarse.
+Trabajo diferido explícitamente hasta después de cerrar los 5 puntos de la auditoría crítica (§20-§24). Dos partes, encontradas y resueltas en la misma pasada porque una llevó a la otra.
 
-**Problema detectado:** `Result`/`Result<T>` (`Domain/Common/Result.cs`) solo exponía `string? Error`. Cada endpoint mapeaba el status HTTP comparando el **contenido** del mensaje contra una constante del handler (`result.Error == XCommandHandler.SomeConstant ? 409 : 404`), con un `default`/`_` que caía silenciosamente en un status code (404 en la mayoría de endpoints, 400 en `ReportsEndpoints`, sin ningún criterio uniforme entre archivos). Esto significa que un `Result.Failure(nuevoMensaje)` agregado a futuro sin actualizar el switch del endpoint quedaría mal clasificado sin que el compilador, ni ningún test, lo detectaran — un bug silencioso, no una excepción.
+### 25.1 Cobertura completa de la colección
 
-**Decisión:** `Result`/`Result<T>` ahora exigen un `ErrorType` (enum: `NotFound`, `Conflict`, `Validation`, `Unauthorized`) en todo `Failure(...)` — no hay overload que lo omita, así que un nuevo `Failure` sin clasificar es un error de compilación, no un 404 silencioso. El mapeo a HTTP status se centralizó en `ResultExtensions.ToErrorResponse()` (API/Endpoints), con un `switch` exhaustivo por `ErrorType` que **lanza una excepción** (no cae a un default silencioso) si algún día aparece un `ErrorType` sin mapear — el fallo se vuelve ruidoso e inmediato, en vez de una respuesta HTTP incorrecta y silenciosa.
+La colección solo cubría Auth, Projects y Columns. Se agregaron los folders **Users**, **Board**, **Tasks** (create/update/move/delete, con sus casos de error) y **Reports** (PDF/Excel/formato inválido), y **Logout** al final de `Cleanup` -- deliberadamente el último request de toda la colección, porque revoca el token real (blocklist por `jti`, §16) y cualquier folder posterior lo necesitaría. `Delete Column` se movió de `Columns` a `Cleanup` por la misma razón de orden: correr después de `Tasks > Delete Task` para no chocar con la regla de negocio de la sección 6.4 (no borrar columna con tareas).
 
-**Clasificación aplicada** (23 sitios de `Result.Failure` en 15 handlers, revisados uno a uno contra el comportamiento HTTP ya existente para no cambiar semántica, solo tiparla):
-- `NotFound`: todo "entidad no encontrada" (Project, Column, Task).
-- `Conflict`: reglas de negocio de estado (`ColumnHasTasks`, `ProjectHasTasks`, `DuplicateName`) y conflictos de concurrencia `xmin` (ADR §15.2).
-- `Validation`: `MoveTaskCommandHandler.TargetIndexOutOfRange`, `ExportProjectReportQueryHandler.UnsupportedFormat` — antes ambos caían en el `default` de sus endpoints por rutas distintas (400 uno, 404 el otro sin querer en algún caso), ahora es explícito y uniforme.
-- `Unauthorized`: `LoginCommandHandler.InvalidCredentials`.
+**Verificado con Newman, no solo importado a Postman:** `npx newman run` sobre la colección completa reveló dos bugs reales antes de darla por cerrada:
 
-**Por qué no una librería de terceros (ErrorOr, FluentResults):** el proyecto ya tiene un `Result` propio, simple, sin dependencias, defendible en la sustentación. Agregar una librería externa para resolver un problema de 4 categorías de error hubiera sido una dependencia nueva sin necesidad real (criterio ya aplicado contra AutoMapper, §1) — la solución tipada in-house cierra el mismo hueco con el mismo código que ya existía, solo con un campo más.
+1. **Fechas hardcodeadas ya vencidas.** `Create Project`/`Update Project` usaban `"2026-01-01"` como `startDate` -- válido cuando se escribió la colección, inválido para la regla de negocio "la fecha de inicio no puede ser anterior a hoy" en cualquier corrida posterior a esa fecha. Rompía la colección completa en cascada (sin `projectId`, ningún request posterior podía encadenar). Se corrigió con un pre-request script en `Create Project` que calcula `futureStartDate`/`futureEndDate` relativos a "ahora" -- una fecha fija se vuelve a romper con el tiempo; una calculada, no.
+2. **GUID vacío en el caso 404 de `Create Task`.** `CreateTaskCommandValidator.ColumnId` tiene una regla `.NotEmpty()` que rechaza `Guid.Empty` (`00000000-...`) con 400 (validación) antes de llegar al Handler -- el caso quería probar el 404 de negocio ("columna no encontrada"), no el 400 de formato. Se corrigió usando un GUID no-vacío pero inexistente (`11111111-...`).
 
-**Cobertura de regresión:** cada test de handler que ya afirmaba `result.Error == constante` ahora también afirma `result.ErrorType == ErrorType.X` — para que un futuro cambio accidental de clasificación (ej. mover `ColumnHasTasks` de `Conflict` a `NotFound` por error) rompa un test, no solo se descubra en producción. `ResultTests.cs` (Domain) cubre además que `Success()` no lleva `ErrorType` y que el tipo se preserva correctamente en `Result` (no genérico) y `Result<T>`.
+Ninguno de los dos es un bug del código de producción -- son bugs de la colección de pruebas, encontrados exactamente por la razón por la que se corre con Newman antes de cerrar el trabajo (mismo criterio que motivó el bug de `status` vacío documentado en el README §11, Fase 6).
 
----
+### 25.2 Incoherencia real encontrada al repasar: §20/§21 fuera de orden físico
 
-## 21. Auditoría post-entrega — LoggingBehavior transversal (fix/logging-pipeline-behavior)
+Al revisar si la tabla de Patrones de Diseño (§3) y la fila de RabbitMQ (§1) mencionaban el Outbox Pattern (no lo hacían -- corregido en el PR anterior, fix/board-notification-outbox), se encontró un problema más serio en este mismo archivo: las entradas **§20 y §21 estaban numeradas correctamente pero ubicadas físicamente después de §22, §23 y §24** -- es decir, alguien leyendo el archivo de arriba a abajo encontraba §22→§23→§24→§20→§21, no la secuencia 20→21→22→23→24 que los números prometen. Causa: cada entrada nueva se agregó con un `Edit` que insertaba texto justo antes del final del archivo tal como estaba en ese momento, y en algún punto una entrada se insertó en el lugar equivocado sin que nadie lo notara hasta esta revisión explícita.
 
-Segundo de los 5 hallazgos de la auditoría crítica (§20). La tabla de patrones (§3) afirmaba: *"Pipeline Behaviors | MediatR | Validación automática (FluentValidation) **y logging transversal** antes del Handler"*. Hasta esta entrada, solo existía `ValidationBehavior` — el logging real (Fase 7, §6.1) se implementó manualmente dentro de 5 handlers específicos (`LoginCommandHandler` + los 4 de `Tasks`), no como behavior transversal. La tabla describía una arquitectura que el código no tenía.
+**Decisión:** reordenar físicamente el archivo para que la posición coincida con la numeración (§20 → §21 → §22 → §23 → §24), sin cambiar una sola palabra del contenido de cada entrada -- es un problema de orden, no de contenido. Se documenta aquí porque es exactamente el tipo de incoherencia que este documento existe para prevenir, y porque fue Santiago quien la detectó pidiendo explícitamente "un último repaso a los docs para evitar estas incoherencias antes de hacer el merge" -- no una revisión que el asistente propuso por iniciativa propia.
 
-**Decisión:** en vez de corregir la tabla del §3 para que reflejara "logging manual selectivo", se implementó el `LoggingBehavior<TRequest, TResponse>` que la tabla ya prometía — la documentación es la fuente de verdad del proyecto (regla de `CLAUDE.md`), así que cuando diverge del código, la brecha se cierra en el código, no reescribiendo la promesa a la baja.
+### 25.3 README también actualizado
 
-**Diseño:**
-- `LoggingBehavior` (`Application/Common/Behaviors`) traza inicio, fin y duración de **todo** request de MediatR a nivel `Debug` — no `Information`, porque es volumen alto (una entrada por cada Command/Query, éxito o fracaso de negocio) y no aporta señal accionable por sí solo; el nivel mínimo configurable por entorno (`Serilog:MinimumLevel`, ya existente desde Fase 7) decide si se emite.
-- Registrado **antes** que `ValidationBehavior` en `DependencyInjection.cs` — cada behavior envuelve al siguiente, así que Logging también traza requests que fallan validación (`ValidationException`), no solo los que llegan al Handler.
-- **Nunca registra el payload del request**, solo `typeof(TRequest).Name` — evita que `LoginCommand` (contiene la contraseña en texto plano antes del hash) quede expuesto en el log si alguien agrega un `ToString()` o serialización automática a futuro. Es una decisión de diseño, no un descuido: un logging transversal genérico que serializara el request completo sería el tipo de código que un evaluador de seguridad marcaría de inmediato.
-- No duplica ni reemplaza los `LogWarning` de negocio ya presentes en los 5 handlers críticos (§6.1): este behavior no conoce el resultado de negocio (`Result.IsSuccess`), solo si el pipeline se completó o lanzó una excepción no controlada — son dos niveles de logging distintos y complementarios, no redundantes. Una excepción real que llegue hasta este behavior (no las de negocio, que ya se resuelven como `Result.Failure` dentro del handler) se loguea a `Error` con el stack trace completo antes de relanzarse, sin swallowearla.
-
-**Alternativa descartada — loguear el objeto `request` completo:** más útil para debugging ad-hoc, pero reintroduce el riesgo de PII/secretos en logs que el propio ADR ya trata como no negociable (§8: hash de contraseña, nunca en texto plano en ningún punto observable). Se descarta a favor de solo el nombre del tipo.
-
-**Cobertura de test:** `LoggingBehaviorTests.cs` verifica el camino feliz (la respuesta de `next()` pasa sin alterarse) y que una excepción de `next()` se relanza intacta (`Assert.Same`), no envuelta ni swallowed. No se verifican las llamadas al logger en sí (`ILogger.Log<TState>` es genérico y frágil de mockear con NSubstitute) — consistente con el resto de la suite, que nunca verifica logging como comportamiento observable, solo el resultado funcional.
+`README.md` §2 gana instrucciones más específicas (tiempo de primer arranque, cómo verificar `/health`, cómo detener y limpiar el volumen, cómo importar y correr la colección completa desde Postman o via `newman` en línea de comandos) y §5/§6/§10 se corrigen para dejar de describir un sistema que ya no existe (los Handlers de Tasks ya no llaman a `IBoardNotifier` directamente, el conteo de tests de integración no incluía los 4 de `OutboxProcessorTests`).
