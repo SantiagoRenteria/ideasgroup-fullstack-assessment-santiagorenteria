@@ -759,3 +759,63 @@ Es la consecuencia esperada de `sessionStorage` (§17), que el estándar aísla 
 - **Verificación en navegador contra el stack real de `docker compose`**, no solo por specs (lección del §26.1), midiendo el DOM en vez de mirar la pantalla:
   - Entrando a `/board/{id}` de un proyecto realmente borrado: la URL termina en `/projects`, el toast es `p-toast-message-warn` con "Proyecto no disponible / Este proyecto ya no existe. Puede que otra sesión lo haya eliminado.", y **no queda ningún tablero renderizado** (cero contenedores `cdkDropList`). El toast sigue visible después de la navegación, lo que confirma que el host raíz del §26.4 hace su trabajo.
   - Contraste con un tablero válido: cero toasts, 4 columnas, 16 tarjetas y el indicador de presencia poblado — es decir, el aviso de tiempo real del caso anterior es específico del proyecto inexistente y **no** una regresión de SignalR.
+
+---
+
+## 28. Tarjetas fantasma en el tablero — sincronización de tiempo real (fix/frontend-security-hardening)
+
+Santiago reportó, con dos ventanas abiertas sobre el mismo tablero, una alerta repetida "Tarea no encontrada., se revirtió el cambio." y lo atribuyó al outbox ("muchas alertas que antes no existían"). La correlación temporal era correcta; la causa no era el outbox.
+
+**Descartado primero, con datos:** el outbox no estaba reemitiendo eventos viejos — 74 mensajes, **0 pendientes, 74 procesados**, y `ClaimBatchAsync` marca procesado dentro de la misma transacción del claim, así que un reinicio de la API no reproduce nada.
+
+**Diagnóstico real, reconstruido desde los logs.** La tarea que fallaba era `e2000000-…0007` ("Fase 2"), borrada a las 02:47:12 con un evento `TaskDeleted{ColumnId: …0003}` (Review, su posición en la base). Veinticuatro segundos después, tres `PATCH /move` sobre esa misma tarea devolvieron `404` — desde una ventana que seguía pintándola en "En progreso", con el WebSocket abierto todo el tiempo. El evento de borrado había llegado y no había hecho nada.
+
+### 28.1 La causa: los handlers confiaban en el `columnId` del evento
+
+`applyRemoteTaskDeleted` buscaba la columna por `payload.columnId` y filtraba **solo** ahí. Como el cliente tenía la tarea en otra columna, no la encontraba y no la borraba de ninguna parte: tarjeta fantasma permanente, y `404` en cada intento de moverla.
+
+Lo delator es que dos líneas más abajo `applyRemoteTaskMoved` ya hacía lo correcto — recorrer todas las columnas buscando por id. El bug era una inconsistencia del archivo consigo mismo.
+
+Revisados los demás handlers a pedido de Santiago ("¿y con editar, crear y mover también?"), la respuesta fue sí: era una familia de cinco, no un caso aislado.
+
+| Punto | Síntoma antes del fix |
+|---|---|
+| `applyRemoteTaskDeleted` | Tarjeta fantasma y `404` en cada reintento — **el caso reportado** |
+| `replaceTaskInPlace` (evento `TaskUpdated`) | La edición se descartaba **en silencio**: sin alerta y sin cambio visible |
+| `applyRemoteTaskCreated` | El guard de duplicado solo miraba la columna del evento; la misma tarea podía renderizarse dos veces |
+| `applyRemoteTaskMoved` | Si la columna destino no existía localmente, quitaba la tarea y no la reinsertaba: desaparecía del tablero |
+| `deleteTask` (borrado local) | Usaba `task.columnId`, pero el drag&drop de CDK mueve el elemento de array **sin** reescribir ese campo: borrar justo después de arrastrar dejaba la tarjeta en pantalla |
+
+**Decisión:** un único `findTaskLocation(taskId)` que recorre todo el tablero y devuelve `{ column, index }`, usado por los cinco. El estado local se indexa por **id**, que es la única identidad estable de una tarea; la columna es un dato derivado que puede divergir por causas legítimas — un evento perdido en una reconexión, la latencia del poller del outbox, o un movimiento optimista aún sin confirmar. En `applyRemoteTaskMoved` se añade además una guarda: sin columna destino conocida se aborta **antes** de quitar la tarea, porque una tarjeta en su sitio viejo es un error mucho más benigno que una tarjeta ausente. En `replaceTaskInPlace` se respeta a propósito la posición local: editar no traslada, y mover la tarjeta ahí pisaría un traslado que este cliente todavía no haya visto.
+
+**Por qué apareció con el outbox y no antes.** Antes de §24 el notificador corría dentro del request HTTP: cliente y servidor divergían por milisegundos. Con el outbox hay un poller intermedio, y esa latencia ensancha la ventana en la que el `columnId` del servidor y la posición local difieren — que es la condición exacta que activaba el bug. El defecto existía desde la Fase 4; el outbox lo volvió cotidiano. Es un buen recordatorio de que introducir asincronía no crea bugs nuevos, revela los que asumían sincronía.
+
+### 28.2 Un `404` al mover no debe revertir: debe resincronizar
+
+`onDrop` revertía con el snapshot y avisaba, dejando la tarjeta fantasma en pantalla. El usuario reintentaba, otra alerta, y otra — de ahí las "muchas alertas": tres intentos a las 02:47:36, :43 y :50. El sistema devolvía al usuario al mismo estado imposible.
+
+**Decisión:** ante `404` (tarea o columna destino inexistentes) se resincroniza el tablero en vez de revertir. Un `404` no prueba que ese traslado fallara: prueba que esta copia del tablero **perdió eventos**. Cualquier otro error (`409`, `500`, red) sí revierte, porque es transitorio y expulsar al usuario de su contexto sería peor que dejarlo reintentar.
+
+**Sobre el requisito de "sin recarga manual" (enunciado §6.7), planteado por Santiago antes de aprobar el cambio.** No hay conflicto, por dos razones. Primera: `loadBoard()` es un `GET` que actualiza el estado en memoria de la SPA — no hay recarga de página, no se reinicia Angular, no se cae la conexión de SignalR, no se pierden los filtros ni la búsqueda. Segunda, y decisiva: el adjetivo del enunciado es **manual**, y lo que prohíbe es que el usuario tenga que intervenir para ver la realidad. Un resync automático es lo contrario de una recarga manual. De hecho el comportamiento **anterior** era el que rozaba el incumplimiento: la tarjeta fantasma no desaparecía nunca por sí sola y la única salida del usuario era pulsar F5. El canal de propagación sigue siendo SignalR, dentro de los dos segundos que pide §6.7; el refetch es recuperación de error, no el mecanismo de propagación.
+
+**Alternativa descartada — quitar solo esa tarjeta del estado local en vez de resincronizar:** más quirúrgica y sin peticiones, pero corrige el síntoma y no la causa. Un `404` no informa únicamente de que esa tarea murió: informa de que se perdieron eventos, y si se perdió uno probablemente se perdieron más. El resto de la divergencia quedaría intacta, esperando.
+
+Se corrige además la doble puntuación visible en el reporte de Santiago ("Tarea no encontrada**.**, se revirtió el cambio."): el mensaje del servidor ya trae punto final y la plantilla añadía otro.
+
+### 28.3 Resincronización al reconectar — la causa de fondo
+
+`withAutomaticReconnect()` reconectaba y `onreconnected` volvía a pedir la membresía del grupo, pero **nadie recargaba el tablero**. SignalR no almacena ni reenvía los eventos emitidos mientras un cliente está caído: se pierden por definición. El cliente volvía al grupo con un estado desfasado y sin ninguna forma de deducirlo desde el propio canal — quedaba desincronizado indefinidamente, generando exactamente las divergencias de columna del §28.1.
+
+**Decisión:** el servicio expone `reconnected$`, que emite **después** de que el `JoinBoard` haya resuelto (así el refetch no se pierde los eventos que lleguen entre ambos), y `BoardComponent` responde con un `loadBoard()`. Se dispara por reconexión, no por intervalo: **no es polling**, distinción que importa porque un `GET` periódico sí sería una forma de eludir el requisito de tiempo real, y uno por reconexión no.
+
+Este punto no depende de interpretar el enunciado: ningún canal de tiempo real puede entregar eventos a un cliente desconectado, así que resincronizar al reconectar es la única manera de que la promesa de §6.7 sobreviva a una caída de red. Es lo que hacen Slack, Linear, Figma y Jira.
+
+### 28.4 Verificación
+
+- `ng test --watch=false`: **84/84** specs (76 antes, 8 nuevos) — uno por cada punto de la tabla del §28.1, más el resync por reconexión, el `404` que resincroniza y el error no-`404` que revierte sin duplicar el punto del mensaje.
+- **Reproducción end-to-end del bug original y su corrección**, con dos sesiones reales (`Evaluador` y `Luis Rentería`) sobre el mismo tablero, ambas con presencia mutua confirmada:
+  1. Se crea una tarea en `Backlog`; ambas sesiones la ven aparecer.
+  2. Se mueve a `Review` enviando el `X-Realtime-Connection-Id` **de la sesión B**, que el backend excluye del evento (§15.3) — así se reproduce con exactitud un evento perdido.
+  3. Divergencia medida sobre el DOM: la sesión B la tiene en **columna índice 0 (Backlog)**, el servidor en **índice 2 (Review)**. Este es el estado que producía las tarjetas fantasma.
+  4. Se borra la tarea sin excluir a nadie: la sesión B recibe `TaskDeleted{ColumnId: Review}` teniéndola pintada en `Backlog`, el escenario que antes fallaba. **La tarjeta desaparece** y el total vuelve de 15 a 14 tarjetas, sin recarga y con la misma URL.
+- **Resync por reconexión, con una caída real** provocada reiniciando el contenedor de la API. Traza de red de la sesión B, sin navegación intermedia: `GET …/board 200` (carga inicial) → `POST negotiate 200` → `POST negotiate` **502** (la API estaba caída) → `POST negotiate 200` (reconectado) → `GET …/board 200` (**el resync**). Una sola petición extra, después del `negotiate`, no periódica.
