@@ -600,3 +600,72 @@ Al revisar si la tabla de Patrones de Diseño (§3) y la fila de RabbitMQ (§1) 
 ### 25.3 README también actualizado
 
 `README.md` §2 gana instrucciones más específicas (tiempo de primer arranque, cómo verificar `/health`, cómo detener y limpiar el volumen, cómo importar y correr la colección completa desde Postman o via `newman` en línea de comandos) y §5/§6/§10 se corrigen para dejar de describir un sistema que ya no existe (los Handlers de Tasks ya no llaman a `IBoardNotifier` directamente, el conteo de tests de integración no incluía los 4 de `OutboxProcessorTests`).
+
+---
+
+## 26. Auditoría de frontend y seguridad general (fix/frontend-security-hardening)
+
+Revisión pedida explícitamente por Santiago con foco en frontend y seguridad transversal (no solo backend, ya auditado en §19-§24), con instrucción explícita de "nada de camino feliz". Se identificaron hallazgos reales y se corrigieron en la misma sesión (no solo se documentaron) porque ninguno requería una decisión de arquitectura mayor salvo el punto §26.4.
+
+### 26.1 Sin cabeceras de seguridad HTTP — el hallazgo más serio
+
+Ni `nginx.conf` ni la API emitían `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` ni `Permissions-Policy`. La única defensa contra XSS era el auto-escape de Angular en interpolación (verificado: cero usos de `[innerHTML]`/`bypassSecurityTrust*` en todo `frontend/src`) — sin CSP, esa era la única capa, y sin `X-Frame-Options`/`frame-ancestors`, el login era embebible en un `<iframe>` de un sitio malicioso (clickjacking).
+
+**Decisión:** cabeceras agregadas en `frontend/nginx.conf` (único punto de entrada, §1). CSP con `script-src 'self'` y `style-src 'self' 'unsafe-inline'` (Sakai/PrimeNG usa estilos inline en varios templates; una CSP que los bloqueara habría roto la UI). `connect-src` incluye `ws:`/`wss:` porque SignalR negocia el handshake por WebSocket bajo el mismo origen. `frame-ancestors 'none'` cierra el clickjacking sin depender de `X-Frame-Options` (redundante a propósito para navegadores viejos que no leen CSP).
+
+**Efecto secundario no anticipado — la CSP rompió toda la aplicación, y cómo se diagnosticó.** Al levantar el stack con `docker compose`, la aplicación entera (empezando por el login) se renderizó sin ningún estilo. La causa: la optimización `inlineCritical` de Angular, **activa por defecto en builds de producción**, difiere la carga del CSS emitiendo `<link rel="stylesheet" media="print" onload="this.media='all'">`. Ese `onload` es un **manejador de evento inline**, que `script-src 'self'` bloquea por definición — las hojas quedaban permanentemente en `media="print"` y nunca se aplicaban. Solo se manifestaba en el build de producción: `ng serve` no aplica `inlineCritical`, así que la verificación en el servidor de desarrollo pasó limpia y dio una falsa sensación de seguridad.
+
+Se resolvió desactivando `inlineCritical` en `frontend/angular.json` (`optimization.styles.inlineCritical: false`), no agregando `'unsafe-inline'` a `script-src`: esa segunda opción habría anulado justamente la protección que motivó la cabecera, a cambio de un beneficio marginal de *first contentful paint* en una aplicación de evaluación.
+
+**Lección de método, registrada a propósito:** el diagnóstico inicial fue incorrecto dos veces (se culpó primero a la CSP sin pruebas, luego al refactor de `shared/` del §26.4, que era inocente). Ambos errores tuvieron la misma raíz: se verificó en el navegador **sin controlar la caché**, y el navegador estaba ejecutando un `main.<hash>.js` de un build anterior. Recién al comparar los hashes servidos por nginx contra los cargados en la página se detectó la discrepancia. El diagnóstico definitivo se hizo midiendo geometría real (`getBoundingClientRect` sobre cinco elementos) contra el build de `main` servido en el mismo puerto y con la caché forzada a saltarse, no por inspección visual — ver §26.9 sobre el bug de caché que hizo posible esta confusión.
+
+### 26.2 CORS más ancho de lo necesario
+
+`AllowAnyHeader().AllowAnyMethod()` en `DependencyInjection.cs` — el origen ya estaba restringido a whitelist (§19), pero headers/métodos no. Acotado a `Authorization`/`Content-Type` y a los verbos REST que la API realmente expone (`GET/POST/PUT/DELETE/OPTIONS`). No es una vulnerabilidad explotable per se (el origen ya filtraba), pero es endurecimiento barato.
+
+### 26.3 Comentario de código que contradecía la decisión real
+
+`realtime-board.service.ts` afirmaba en un comentario que el JWT "vive solo en memoria", contradiciendo la decisión ya revisada en §17 (`sessionStorage`, desde Fase 4). Corregido. Es exactamente el tipo de divergencia documentación-código que §21 ya trató como no negociable, aplicado aquí a un comentario en vez de a un ADR.
+
+### 26.4 `shared/` — la capa documentada en §2.1 no existía en el código
+
+El ADR §2.1 promete `core/shared/features` en el frontend para cumplir la sección 4 del enunciado ("separación por capas... en el frontend"). El árbol real solo tenía `core/`, `features/` y `layout/` — `shared/` nunca se creó, y había duplicación real que debía vivir ahí:
+
+- `<p-toast>`/`<p-confirmDialog>` copiados literalmente en `board.component.html` y `project-list.component.html`, cada uno con su propio `providers: [ConfirmationService, MessageService]` a nivel de `@Component` (una instancia de cada servicio por página).
+- `priorityOptions = Object.values(TaskPriority).map(...)` derivado de forma idéntica en `board.component.ts` y `task-form.component.ts`.
+
+**Decisión (confirmada explícitamente por Santiago antes de implementar, regla del flujo obligatorio de `CLAUDE.md`):** se creó `frontend/src/app/shared/` con `AppNotificationsComponent` (host único de `p-toast`/`p-confirmDialog`) declarado en un nuevo `SharedModule`, montado una sola vez en `app.component.html` (raíz de la app, fuera de cualquier página). `ConfirmationService`/`MessageService` pasan a proveerse una sola vez en `AppModule` (antes: una instancia nueva por cada componente que los declaraba) — así todo componente que los inyecta (incluidos los hijos `TaskFormComponent`/`ProjectFormComponent`/`ProjectColumnsComponent`, que nunca los proveían y ya resolvían desde el ancestro más cercano) apunta a la misma instancia que el host raíz escucha. `priorityOptions` se centralizó como `TASK_PRIORITY_OPTIONS` en `task.model.ts`.
+
+**Alternativa descartada — dejar `shared/` sin crear y corregir solo la duplicación puntual:** se descarta porque el gap real no era la duplicación en sí (dos líneas, bajo costo) sino que el ADR documenta una capa arquitectónica exigida por el enunciado que el código nunca tuvo — exactamente el criterio que ya se aplicó en §21 ("cuando la documentación diverge del código, la brecha se cierra en el código, no reescribiendo la promesa a la baja").
+
+**No se tocó** (evaluado y descartado explícitamente, mismo criterio de no sobre-ingeniería que ya rige el resto del proyecto): migración a standalone components (Angular 17 lo permite, pero es una reescritura de superficie amplia sin beneficio funcional) y un state management centralizado tipo NgRx (con una sola vista consumiendo tiempo real, sería la misma sobre-ingeniería que §15.4 ya descartó para el servicio de SignalR).
+
+### 26.5 Login sin validación de cliente — inconsistencia de arquitectura de formularios
+
+`LoginComponent` era el único componente de la app en usar template-driven forms (`[(ngModel)]`, sin `required` ni validación de formato), mientras `TaskFormComponent`/`ProjectFormComponent` ya usaban Reactive Forms. No era una falla de seguridad (el backend ya valida con FluentValidation), pero un formulario que podía enviarse vacío y una inconsistencia de patrón no justificada en ningún punto del ADR. Migrado a Reactive Forms (`FormBuilder`, `Validators.required`/`.email`), consistente con el resto de la app.
+
+### 26.6 Bug preexistente encontrado al verificar en navegador, no parte de la auditoría original
+
+Al levantar `ng serve` para verificar los cambios anteriores, la consola mostraba `NG0303: Can't bind to 'ngIf'` en `AppComponent` — `AppModule` nunca importaba `CommonModule`, así que el `*ngIf="loading"` del overlay de carga entre navegaciones (`app.component.html`) nunca funcionó. No relacionado con los hallazgos de seguridad; se corrigió por ser un bug real y barato de arreglar, encontrado por seguir la disciplina de verificación en navegador antes de dar un cambio de frontend por cerrado.
+
+### 26.7 Alcance sin ACL por proyecto — no es un hallazgo, es scope explícito
+
+No existe ningún control de propiedad/rol: cualquier usuario autenticado puede ver y mutar cualquier proyecto/tablero. Contrastado contra el PDF del enunciado (sección 6.2: "todos los endpoints de negocio necesarios protegidos con autorización", sección 5: modelo de dominio mínimo sin roles) — el enunciado nunca pide multi-tenancy. Es coherente con "tablero compartido de equipo", así que no se implementó ningún cambio; se documenta aquí para que quede una respuesta lista si surge en la sustentación, en vez de que parezca un descuido no evaluado.
+
+### 26.8 No implementado — trade-off de rate limiting por IP, documentado, no rediseñado
+
+El rate limit de login (§19, 5/min por IP) protege contra DoS auto-infligido, pero también significa que usuarios legítimos detrás del mismo NAT/proxy corporativo comparten cupo. No se cambió a bloqueo por cuenta porque es un rediseño real (requiere lockout por usuario + reglas de desbloqueo) no solicitado y desproporcionado para 2 usuarios semilla — se deja documentado como limitación conocida, no como pendiente.
+
+### 26.9 `Cache-Control` ausente en nginx — bug real encontrado depurando lo anterior
+
+Perseguir el fallo del §26.1 destapó un bug independiente y más serio para el evaluador: `nginx.conf` no enviaba **ninguna** cabecera `Cache-Control`, solo `ETag`/`Last-Modified`. Con eso el navegador aplica caché heurística sobre `index.html` — el único archivo del build **sin hash en el nombre**, y precisamente el que referencia a todos los bundles hasheados. Efecto observado en vivo, no teórico: el navegador ejecutaba un `main.<hash>.js` que ya no existía en el servidor, sirviendo una SPA obsoleta completa después de un redespliegue. Al evaluador le pasaría lo mismo al recargar tras cualquier cambio.
+
+**Decisión:** `index.html` pasa a `no-cache, must-revalidate`; el resto de assets, que llevan hash de contenido (`outputHashing: all`, o sea que si cambia el contenido cambia la URL), a `immutable` con un año.
+
+**Detalle no obvio de nginx:** se implementó con un `map` a nivel `http` y un único `add_header Cache-Control $cache_control` a nivel `server`, **no** con un `add_header` dentro de cada `location`. Motivo: en nginx, un `add_header` en un bloque hijo **descarta todas** las cabeceras heredadas del padre — hacerlo por `location` habría dejado silenciosamente las cinco cabeceras de seguridad del §26.1 fuera de las respuestas de `index.html` y de los assets, es decir, habría desactivado el hardening justo donde más importa. Verificado con `curl` que ambas rutas devuelven `Cache-Control` **y** la CSP.
+
+### 26.10 Verificación
+
+- `ng test --watch=false`: **74/74** specs.
+- `dotnet build GestionProyectos.sln`: sin errores ni warnings.
+- **Verificación end-to-end contra el stack real de `docker compose`** (no solo `ng serve`, precisamente por la lección del §26.1), con la caché del navegador forzada a saltarse en cada medición: geometría del login idéntica a la de `main` (`getBoundingClientRect` sobre cinco elementos); validación de cliente bloqueando el submit sin emitir petición HTTP; login completo hasta `/projects`; layout Sakai correcto; `app-notifications`/`p-toast`/`p-confirmDialog` presentes **exactamente una vez** en el DOM; diálogo de confirmación abriéndose desde el servicio singleton y cancelándose sin borrar datos; tablero renderizando columnas y tarjetas; y **SignalR conectando bajo la CSP** — confirmado por el indicador de presencia poblado, que exige WebSocket activo, `JoinBoard` y evento `BoardPresenceChanged` recibido. Cero errores y cero violaciones de CSP en consola.
