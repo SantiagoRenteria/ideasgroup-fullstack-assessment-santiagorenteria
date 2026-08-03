@@ -46,7 +46,7 @@ export class RealtimeBoardService {
     }
 
     async connect(): Promise<void> {
-        // El token JWT vive solo en memoria (ver AuthService); accessTokenFactory lo
+        // El token JWT vive en sessionStorage (ver AuthService, ADR §17); accessTokenFactory lo
         // adjunta como query string en el handshake de WebSocket, que no admite headers
         // personalizados -- ver ADR §15 y la configuracion de JwtBearerEvents en el backend.
         this.connection = new signalR.HubConnectionBuilder()
