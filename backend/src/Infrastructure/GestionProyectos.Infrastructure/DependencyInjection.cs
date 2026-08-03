@@ -35,12 +35,19 @@ public static class DependencyInjection
 
         // Whitelist explicita (seccion 4, METODOLOGIA §9.3), nunca AllowAnyOrigin; sin
         // AllowCredentials porque la API usa JWT por header, no cookies.
+        // Headers/metodos acotados a lo que el frontend realmente envia (Authorization del
+        // interceptor, Content-Type de los POST/PUT con JSON) en vez de AllowAny*, que era
+        // mas ancho de lo necesario aun con el origen ya restringido.
         var corsOptions = configuration.GetSection(CorsOptions.SectionName).Get<CorsOptions>() ?? new CorsOptions();
 
         services.AddCors(options => options.AddDefaultPolicy(policy =>
         {
             if (!string.IsNullOrWhiteSpace(corsOptions.AllowedOrigin))
-                policy.WithOrigins(corsOptions.AllowedOrigin).AllowAnyHeader().AllowAnyMethod();
+            {
+                policy.WithOrigins(corsOptions.AllowedOrigin)
+                    .WithHeaders("Authorization", "Content-Type")
+                    .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS");
+            }
         }));
 
         services.AddScoped<IUserRepository, UserRepository>();
