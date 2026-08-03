@@ -14,10 +14,19 @@ public class TokenRevocationStore : ITokenRevocationStore
         _dbContext = dbContext;
     }
 
-    public Task RevokeAsync(string jti, DateTime expiresAtUtc, CancellationToken cancellationToken)
+    // Purga oportunista antes de insertar: un JWT ya expirado lo rechaza la validacion de
+    // firma, asi que su fila en la blocklist no protege de nada y solo hace crecer la tabla
+    // (una fila por logout, para siempre). Se limpia aqui, en la operacion menos frecuente
+    // del sistema, en vez de con un BackgroundService dedicado -- misma logica de no
+    // introducir infraestructura para un problema que cabe en una consulta. Corre fuera del
+    // SaveChanges del Handler: si este falla, lo unico perdido son filas ya inutiles.
+    public async Task RevokeAsync(string jti, DateTime expiresAtUtc, CancellationToken cancellationToken)
     {
+        await _dbContext.RevokedTokens
+            .Where(t => t.ExpiresAtUtc < DateTime.UtcNow)
+            .ExecuteDeleteAsync(cancellationToken);
+
         _dbContext.RevokedTokens.Add(new RevokedToken(jti, expiresAtUtc));
-        return Task.CompletedTask;
     }
 
     public Task<bool> IsRevokedAsync(string jti, CancellationToken cancellationToken) =>
