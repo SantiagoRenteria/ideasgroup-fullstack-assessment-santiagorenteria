@@ -31,7 +31,7 @@
 |---|---|
 | .NET 10 / C# 14 | El enunciado exige .NET 8 explícitamente (secciones 4 y 6.1). Se evaluó por ciclo de soporte más largo, pero desviarse de un stack especificado no es zona de criterio libre. |
 | YARP API Gateway | No hay múltiples servicios que enrutar (arquitectura monolítica). Nginx, ya obligatorio para servir el SPA, cumple el mismo objetivo de punto único de entrada sin sumar un contenedor de riesgo adicional en el docker-compose del evaluador. |
-| RabbitMQ | El requisito de tiempo real se resuelve completo con SignalR. RabbitMQ solo se justificaría para notificaciones persistentes offline, que no están pedidas. Se documenta como extensión futura (outbox pattern) sin implementar. |
+| RabbitMQ | El requisito de tiempo real se resuelve completo con SignalR. RabbitMQ solo se justificaría para coordinar múltiples réplicas de la API, que este deployment no tiene. **Actualización (§24):** el Outbox Pattern sí se implementó (auditoría post-entrega) para la consistencia de la notificación del tablero — con polling + señal in-process, no un bus de mensajería; RabbitMQ se reevaluó en ese momento y se descartó por segunda vez, mismo motivo. |
 | Prometheus + Grafana + Seq (stack completo) | Ningún punto del rubro de evaluación lo exige. Se optó por Aspire Dashboard standalone: un solo contenedor, mismos 3 pilares de observabilidad, menor riesgo de fallo en entorno del evaluador. |
 | .NET Aspire AppHost (orquestación completa) | Reemplazaría el modelo de `docker compose up` exigido explícitamente en 6.1. Se usa solo el Aspire Dashboard como contenedor OTLP receptor, no el AppHost. |
 | AutoMapper | Con 4 entidades de dominio, se prefiere mapeo manual centralizado en métodos de extensión (`ToDto()`) — más explícito y sin "magia" de reflection que defender en sustentación. |
@@ -75,10 +75,12 @@ Se descarta hexagonal literal (puertos/adaptadores) en Angular por sobre-ingenie
 |---|---|---|
 | CQRS | Application layer | Separa lectura de escritura; encaja naturalmente con hexagonal |
 | Mediator (MediatR) | Application/API | Desacopla endpoints HTTP de lógica de negocio |
-| Pipeline Behaviors | MediatR | Validación automática (FluentValidation) y logging transversal antes del Handler |
-| Result Pattern | Domain/Application | Errores de negocio previsibles sin abusar de excepciones. Convención: `Result.Failure` → 400/409 según tipo de error, documentado por caso |
+| Pipeline Behaviors | MediatR | Validación (FluentValidation) y logging transversal (`LoggingBehavior`, auditoría post-entrega §21) antes del Handler |
+| Result Pattern | Domain/Application | Errores de negocio previsibles sin abusar de excepciones. `ErrorType` tipado (`NotFound`/`Conflict`/`Validation`/`Unauthorized`) mapea a HTTP status de forma centralizada (`ResultExtensions.ToErrorResponse()`) — reemplaza la convención original por contenido de mensaje, ver auditoría post-entrega §20 |
+| Value Objects | Domain | `Email`, `DateRange`, `LexoRankKey` centralizan validación/normalización antes dispersa o ausente en las entidades — auditoría post-entrega §22 |
 | Strategy + Factory | Módulo de reportes | Exportadores PDF/Excel intercambiables desde DTO común (ver sección 5) |
 | Repository + Unit of Work | Infrastructure | Puerto de persistencia; dominio ignora EF Core |
+| Outbox Pattern | Application/Infrastructure | Notificación del tablero por SignalR consistente con el commit de la mutación de negocio — auditoría post-entrega §24 |
 | Options Pattern | Configuración | JWT, connection strings, inyectados tipados desde variables de entorno |
 
 ---
