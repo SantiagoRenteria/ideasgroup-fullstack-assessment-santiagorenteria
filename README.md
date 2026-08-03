@@ -178,7 +178,7 @@ Detalle completo, incluida la justificación de por qué la consulta arranca des
 
 ![Diagrama entidad-relación](docs/diagrams/erd.png)
 
-Generado por introspección directa de `information_schema` contra el Postgres real levantado con `docker compose` (no a mano ni desde memoria del código) — columnas, tipos, claves primarias/foráneas e índices únicos consultados con SQL, volcados a `docs/diagrams/erd.mmd` (Mermaid ER) y renderizados a PNG con `@mermaid-js/mermaid-cli`. `revoked_tokens` es la única tabla sin relación con el resto: blocklist de JWT (§16 del ADR), no forma parte del modelo de dominio de la sección 5 del enunciado, pero es una tabla real de las migraciones y se incluye por fidelidad al esquema.
+Generado por introspección directa de `information_schema` contra el Postgres real levantado con `docker compose` (no a mano ni desde memoria del código) — columnas, tipos, claves primarias/foráneas e índices únicos consultados con SQL, volcados a `docs/diagrams/erd.mmd` (Mermaid ER) y renderizados a PNG con `@mermaid-js/mermaid-cli`. `revoked_tokens` y `outbox_messages` son las dos tablas sin relación con el resto: blocklist de JWT (§16 del ADR) y registro técnico del Outbox Pattern (§24 del ADR) respectivamente — ninguna forma parte del modelo de dominio de la sección 5 del enunciado, pero ambas son tablas reales de las migraciones y se incluyen por fidelidad al esquema.
 
 Migraciones incrementales que generan este esquema: `backend/src/Infrastructure/GestionProyectos.Infrastructure/Persistence/Migrations/`.
 

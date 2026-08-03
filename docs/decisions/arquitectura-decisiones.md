@@ -500,6 +500,42 @@ Cuarto de los 5 hallazgos de la auditoría crítica (ver §20-§22). La verifica
 
 ---
 
+## 24. Auditoría post-entrega — Outbox Pattern para la notificación del tablero (fix/board-notification-outbox)
+
+Quinto y último de los 5 hallazgos de la auditoría crítica (ver §20-§23). El hallazgo original (§20, primera auditoría): `CreateTaskCommandHandler`/`UpdateTaskCommandHandler`/`DeleteTaskCommandHandler`/`MoveTaskCommandHandler` llamaban a `IBoardNotifier` directamente **después** de `SaveChangesAsync`. Si el proceso crasheaba entre el commit y la notificación por SignalR (timeout de red, reinicio del contenedor, GC pause), el cambio quedaba persistido pero ninguna otra sesión se enteraba -- el tablero de otro usuario quedaba desincronizado hasta un refresh manual.
+
+### 24.1 Domain Events -- alternativa evaluada y descartada, con un motivo concreto
+
+Antes de implementar, se analizó si la forma idiomática de resolver esto era que la entidad (`TaskEntity`) levantara un **Domain Event** (`TaskMovedDomainEvent`, etc.) en vez de que el Handler encolara el evento explícitamente. Es la respuesta "de libro" en DDD, y hubiera sido la decisión correcta **si** este proyecto tuviera o previera múltiples consumidores del mismo hecho de negocio -- hoy hay exactamente uno (SignalR).
+
+**El motivo concreto para descartarla, no solo "menos código":** el mecanismo de exclusión del emisor (`ConnectionId` del socket SignalR que ya aplicó el cambio de forma optimista, §15.3) es un dato de transporte/presentación, no de negocio -- un evento de dominio puro no debería conocer qué es un `ConnectionId` de SignalR, por la misma regla que ya rige el resto del proyecto ("el dominio no conoce EF Core ni ningún framework externo", §2). Si el evento de dominio no puede cargar el `ConnectionId`, el Handler de todos modos tiene que pasar ese dato por otro lado al encolar -- la "garantía estructural" de Domain Events (imposible olvidar levantar el evento) se rompe parcialmente, porque el `ConnectionId` sigue siendo responsabilidad manual del Handler de cualquier forma. Se opta por el Handler orquestando el encolado explícitamente (Opción A), documentando Domain Events como la decisión correcta si algún día aparece un segundo consumidor real del mismo evento -- mismo patrón que otras decisiones de este documento que se difieren hasta que el escenario real las dispare (§14.2 → §15.2, `xmin`).
+
+### 24.2 RabbitMQ -- descartado por segunda vez, mismo motivo
+
+Se evaluó nuevamente introducir un bus de mensajería para el mecanismo de despacho del Outbox (colas reales en vez de polling). Se descartó otra vez: este deployment es de una sola instancia de API (§1 ya descarta el AppHost de Aspire y YARP por la misma razón -- "no hay múltiples servicios que enrutar"), y la ventaja real de un broker (coordinación entre réplicas) no tiene consumidor en la arquitectura actual. Meter un broker ahora para un problema que Postgres + Outbox ya resuelve sin infraestructura nueva habría contradicho el patrón de decisión que este mismo documento aplica en `§1` (RabbitMQ), `§1` (Aspire AppHost), `§1` (YARP) y `§7.2` (hexagonal literal en frontend).
+
+### 24.3 Diseño: polling + señal in-process, con `FOR UPDATE SKIP LOCKED` como seguro barato
+
+- **`OutboxMessage`** (`Infrastructure/Persistence/Entities`, no Domain -- mismo criterio que `RevokedToken`, §16): registro técnico sin invariantes de negocio propias.
+- **`IOutboxWriter.Enqueue(...)`** (Application, puerto): el Handler lo llama **antes** de `SaveChangesAsync`, nunca invoca `SaveChanges` por sí mismo -- entra en la misma transacción que el cambio de negocio. Si el `SaveChanges` posterior falla (ej. conflicto de `xmin`), la fila de outbox se revierte junto con el cambio de negocio: la atomicidad la da la transacción de Postgres, no un mecanismo a medida.
+- **`OutboxProcessor`** (Infrastructure): el "qué hace un ciclo" -- reclama un lote con `SELECT ... FOR UPDATE SKIP LOCKED`, lo marca procesado dentro de la misma transacción corta (sin mantener el lock de fila abierto durante la llamada de red a SignalR), y despacha cada mensaje a `IBoardNotifier` según su tipo. Separado deliberadamente de `OutboxDispatcher` (el "cuándo corre un ciclo" -- `BackgroundService` + polling) para que sea testeable directamente contra Postgres real sin levantar todo el hosted service.
+- **`OutboxDispatcher`** (Infrastructure, `BackgroundService` + `IOutboxSignal`): polling cada 1s + un `Channel` para que el Handler despierte el ciclo inmediatamente tras un `SaveChanges` exitoso (`IOutboxSignal.Signal()`), sin esperar el próximo tick. Verificado en vivo (`docker compose` + `curl`, moviendo una tarea real): el evento se encoló, se despachó y quedó marcado `processed_at_utc` en **63ms** -- la señal in-process funciona, no solo el polling de respaldo.
+- **`FOR UPDATE SKIP LOCKED`**: insurance barata para si algún día se escala horizontalmente -- sin esto, dos instancias de la API podrían reclamar y notificar el mismo evento duplicado. Hoy el deployment es de una sola instancia (§24.2), así que esto no protege contra un problema actual, pero cuesta una cláusula SQL, no una dependencia nueva.
+
+**Trade-off aceptado y documentado, no descubierto en producción:** el mensaje se marca procesado en la misma transacción que el claim, **antes** de intentar el dispatch real a SignalR (no después). Si el proceso crashea entre el claim y el dispatch efectivo (ventana de milisegundos, dentro de un solo ciclo), ese mensaje específico se pierde -- mucho más angosto y raro que el bug original (que podía afectar prácticamente cualquier request, dependiendo del timing). Se acepta este trade-off en vez de la alternativa (marcar procesado después del dispatch, con un job de recuperación de "claims abandonados") por el mismo criterio de gestión de riesgo bajo restricción de tiempo que ya se aplicó en otras decisiones de este documento (ej. BCrypt sobre Argon2, §11.1; sin limpieza periódica de `revoked_tokens`, §16).
+
+### 24.4 Detalle no obvio -- columna `Id` sin `snake_case` en el primer intento
+
+La primera migración generada (`AddOutboxMessages`) creó la columna de la clave primaria como `"Id"` (con mayúscula, entre comillas) en vez de `id` -- porque, a diferencia de las demás propiedades de `OutboxMessageConfiguration`, no se llamó `builder.Property(m => m.Id).HasColumnName("id")` explícitamente (mismo patrón que sí se aplicó correctamente en `RevokedTokenConfiguration` para `Jti`→`jti`). Se detectó al inspeccionar la tabla real con `psql` durante la verificación en vivo (§24.3), no en revisión de código -- la migración se regeneró (`dotnet ef migrations remove` + `add`) antes de hacer commit, así que nunca llegó a existir una migración pública con el nombre inconsistente que hubiera que corregir con una migración adicional después.
+
+### 24.5 Cobertura de test
+
+- Unitarios: los 4 Handlers de Tasks mockean `IOutboxWriter`/`IOutboxSignal` en vez de `IBoardNotifier`. La aserción de "no se notifica tras un conflicto de concurrencia" se corrigió para verificar `IOutboxSignal.DidNotReceive().Signal()` en vez de `IOutboxWriter.DidNotReceive().Enqueue(...)` -- en el diseño real, `Enqueue` puede llamarse antes del `SaveChanges` que falla (la atomicidad la da la transacción de BD, no el mock), pero `Signal()` solo se llama después de un `SaveChanges` exitoso, que es la garantía que de verdad importa verificar.
+- Integración (`GestionProyectos.IntegrationTests`, Testcontainers): atomicidad real de `Enqueue` + `SaveChanges` contra Postgres; `OutboxProcessor.ProcessPendingAsync` reclama, marca procesado y despacha correctamente; un mensaje ya procesado no se vuelve a despachar en un segundo ciclo.
+- Verificación en vivo (`docker compose` + `curl` + `psql`): confirmada en §24.3.
+
+---
+
 ## 20. Auditoría post-entrega — Result tipado por ErrorType (fix/typed-result-errors)
 
 Auditoría crítica solicitada explícitamente por Santiago sobre el proyecto ya completo (2026-08-02), pidiendo una revisión de evaluador senior, no de instructor. Se identificaron 5 hallazgos priorizados de más sencillo a más difícil; esta entrada documenta el primero, ya cerrado. Los otros 4 (logging pipeline behavior, Value Object `Email`, tests de integración con Testcontainers, Outbox pattern para la notificación del tablero) se documentan en sus propias entradas al implementarse.
