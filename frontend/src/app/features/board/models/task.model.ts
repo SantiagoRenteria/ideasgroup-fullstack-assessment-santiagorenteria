@@ -19,6 +19,10 @@ export const TASK_PRIORITY_SEVERITY: Record<TaskPriority, 'success' | 'info' | '
     [TaskPriority.Urgent]: 'danger'
 };
 
+// Antes se derivaba con el mismo Object.values(...).map(...) por separado en
+// BoardComponent y TaskFormComponent -- un solo lugar para la lista de opciones del dropdown.
+export const TASK_PRIORITY_OPTIONS = Object.values(TaskPriority).map((value) => ({ label: TASK_PRIORITY_LABELS[value], value }));
+
 export interface BoardTask {
     id: string;
     columnId: string;

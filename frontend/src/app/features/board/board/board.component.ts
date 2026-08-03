@@ -5,7 +5,7 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { Subscription } from 'rxjs';
 import { AppUser } from '../models/app-user.model';
 import { Board, BoardColumn } from '../models/board.model';
-import { BoardTask, TASK_PRIORITY_LABELS, TASK_PRIORITY_SEVERITY, TaskPriority } from '../models/task.model';
+import { BoardTask, TASK_PRIORITY_LABELS, TASK_PRIORITY_OPTIONS, TASK_PRIORITY_SEVERITY, TaskPriority } from '../models/task.model';
 import { RealtimeBoardService, TaskDeletedPayload, TaskMovedPayload } from '../services/realtime-board.service';
 import { BoardService } from '../services/board.service';
 import { ReportFormat, ReportService } from '../services/report.service';
@@ -15,8 +15,7 @@ import { UserService } from '../services/user.service';
 @Component({
     selector: 'app-board',
     templateUrl: './board.component.html',
-    styleUrls: ['./board.component.scss'],
-    providers: [ConfirmationService, MessageService]
+    styleUrls: ['./board.component.scss']
 })
 export class BoardComponent implements OnInit, OnDestroy {
     board: Board | null = null;
@@ -35,7 +34,7 @@ export class BoardComponent implements OnInit, OnDestroy {
 
     readonly priorityLabels = TASK_PRIORITY_LABELS;
     readonly prioritySeverity = TASK_PRIORITY_SEVERITY;
-    readonly priorityOptions = Object.values(TaskPriority).map((value) => ({ label: TASK_PRIORITY_LABELS[value], value }));
+    readonly priorityOptions = TASK_PRIORITY_OPTIONS;
 
     private projectId!: string;
     private readonly realtimeSubscriptions: Subscription[] = [];

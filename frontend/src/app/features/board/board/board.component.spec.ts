@@ -168,9 +168,9 @@ describe('BoardComponent', () => {
     it('confirmDelete, al aceptar, elimina la tarea de la columna local', () => {
         fixture.detectChanges();
         taskService.delete.and.returnValue(of(undefined));
-        // ConfirmationService esta declarado como provider a nivel de componente (no del
-        // modulo de testing), asi que hay que resolverlo desde el injector del propio
-        // componente para interceptar la misma instancia que usa BoardComponent.
+        // ConfirmationService/MessageService ahora se proveen una sola vez a nivel de app
+        // (ver revision de arquitectura frontend, shared/); TestBed los provee arriba, asi que
+        // esta es la misma instancia inyectada en BoardComponent.
         const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
         spyOn(confirmationService, 'confirm').and.callFake((options: any) => {
             options.accept();
@@ -249,9 +249,7 @@ describe('BoardComponent', () => {
     it('downloadReport muestra un error si la descarga falla, sin dejar el boton en estado de carga', () => {
         fixture.detectChanges();
         reportService.download.and.returnValue(throwError(() => new Error('fallo de red')));
-        // MessageService esta declarado como provider a nivel de componente (ver el mismo
-        // comentario en el test de confirmDelete), asi que hay que resolverlo desde el
-        // injector del propio componente para interceptar la misma instancia.
+        // Mismo comentario que en confirmDelete: instancia unica provista por TestBed.
         const messageService = fixture.debugElement.injector.get(MessageService);
         spyOn(messageService, 'add');
 
