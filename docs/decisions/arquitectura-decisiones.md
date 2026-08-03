@@ -680,3 +680,82 @@ Más grave que el bug funcional es el lado de seguridad: `public` autoriza a cua
 - `dotnet build GestionProyectos.sln`: sin errores ni warnings.
 - **Cabeceras `Cache-Control` por clase de ruta**, tras la regresión del §26.9, con `curl` contra el stack real y cubriendo **un `location` de cada tipo**: `/` y `/index.html` → `no-cache, must-revalidate`; `main.<hash>.js` → `public, max-age=31536000, immutable`; `/api/projects` y `/hubs/board/negotiate` → `no-store`. En las cinco, las cinco cabeceras de seguridad del §26.1 siguen presentes (la herencia no se rompió). Confirmado también sobre un `200` autenticado real, no solo sobre el `401`: `GET /api/projects` con `Bearer` válido devuelve `no-store` y **solo** el proyecto semilla, es decir, los proyectos borrados que el navegador seguía mostrando venían exclusivamente de su caché.
 - **Verificación end-to-end contra el stack real de `docker compose`** (no solo `ng serve`, precisamente por la lección del §26.1), con la caché del navegador forzada a saltarse en cada medición: geometría del login idéntica a la de `main` (`getBoundingClientRect` sobre cinco elementos); validación de cliente bloqueando el submit sin emitir petición HTTP; login completo hasta `/projects`; layout Sakai correcto; `app-notifications`/`p-toast`/`p-confirmDialog` presentes **exactamente una vez** en el DOM; diálogo de confirmación abriéndose desde el servicio singleton y cancelándose sin borrar datos; tablero renderizando columnas y tarjetas; y **SignalR conectando bajo la CSP** — confirmado por el indicador de presencia poblado, que exige WebSocket activo, `JoinBoard` y evento `BoardPresenceChanged` recibido. Cero errores y cero violaciones de CSP en consola.
+
+---
+
+## 27. Hallazgos de una sesión de pruebas manuales (fix/frontend-security-hardening)
+
+Santiago probó la aplicación a mano contra el stack de `docker compose` y trajo tres observaciones. Cada una se verificó empíricamente contra la API antes de decidir nada — dos resultaron ciertas, una se descartó con argumento y la tercera reveló que el problema estaba en un sitio distinto al que parecía.
+
+### 27.1 Dos columnas pueden compartir `Order` — el orden del tablero era no determinista
+
+Salió como efecto colateral de probar los nombres duplicados: `POST /api/projects/{id}/columns` con `order: 1` dos veces devuelve `201` las dos veces. El `Order` de una columna **lo elige el cliente** (`CreateColumnRequest(string Name, int Order)`), no hay validación de unicidad ni índice que lo impida, y `ColumnRepository.ListByProjectAsync` ordenaba con un `.OrderBy(c => c.Order)` a secas.
+
+Sin un segundo criterio, PostgreSQL no garantiza orden estable entre filas empatadas: el tablero podía intercambiar dos columnas de sitio entre dos cargas **sin que nadie las tocara**. Es un bug peor que el nombre repetido que motivó la revisión, porque es visible y se diagnostica mal (parece un fallo de tiempo real o de caché).
+
+**Decisión:** `.ThenBy(c => c.Id)`. El `Id` es un criterio arbitrario, pero en un empate cualquier criterio es arbitrario — lo único que importa es que sea **estable**. Se prefirió sobre `.ThenBy(c => c.Name)` porque, al no validarse la unicidad del nombre (§27.4), dos columnas pueden empatar también en nombre y el problema volvería.
+
+**Alternativa descartada — impedir el `Order` duplicado (validación o índice único):** habría dejado el ordenamiento igual de frágil ante cualquier otro empate y exige migración; además el `Order` de columnas se reasigna al reordenar, y un índice único obligaría a orquestar la actualización para no violar la restricción a mitad del cambio. El desempate en la consulta resuelve el síntoma real (inestabilidad) sin restringir el modelo.
+
+### 27.2 Borrar un proyecto con otra sesión mirando el tablero — el backend ya estaba bien, el frontend no
+
+Escenario reproducido: la sesión B tiene el tablero cargado, la sesión A borra el proyecto. Resultado medido sobre la API, con B intentando seguir trabajando:
+
+| Acción de la sesión B tras el borrado | Respuesta |
+|---|---|
+| Recargar el tablero / listar columnas / pedir el proyecto | `404` |
+| Crear una tarea en la columna que sigue en su pantalla | `404` "Columna no encontrada." |
+| Renombrar esa columna | `404` |
+| **Tareas huérfanas creadas en base de datos** | **0** |
+
+Tres capas ya construidas explican el resultado, y ninguna depende del cliente: el guard de negocio de `DeleteProjectCommandHandler` (no se puede borrar un proyecto con tareas, `409`), el soft-delete en cascada dentro de transacción explícita, y el `HasQueryFilter` global que vuelve invisible lo borrado para toda consulta (§7). **La integridad no estaba en riesgo en ningún momento.**
+
+Lo que sí faltaba era la reacción del cliente: `BoardComponent.loadBoard` trataba todos los errores igual — un toast genérico "No se pudo cargar el tablero" y `this.board` intacto — así que B se quedaba mirando un tablero fantasma, con columnas que ya rechazaban toda mutación y sin ninguna salida.
+
+**Decisión:** distinguir el `404` del resto. Ante `404`, aviso explícito ("Este proyecto ya no existe. Puede que otra sesión lo haya eliminado.") y `router.navigate(['/projects'])`. Cualquier otro error mantiene al usuario donde está, porque un `500` o una caída de red son transitorios y expulsarlo del tablero sería peor que dejarlo reintentar. El toast sobrevive a la navegación porque `p-toast` vive en el host raíz, fuera del `router-outlet` — consecuencia directa del refactor de `shared/` del §26.4.
+
+**Ruido conocido y no corregido, detectado al verificar en navegador:** `ngOnInit` lanza `loadBoard()` y `connectRealtime()` en paralelo, así que ante un proyecto inexistente el usuario recibe **dos** avisos — el del `404` (útil) y un "Tiempo real no disponible" (irrelevante: a nadie le importa el canal en vivo de un proyecto que ya no existe), porque el `JoinBoard` del hub también falla. Se evaluó conectar el tiempo real solo tras el éxito de `loadBoard`, y se descartó: reordenar el arranque del componente más complejo de la app, a dos días del cierre, por un toast redundante en un camino de error, y además empeoraría el caso del error transitorio (con un `500` el usuario se queda en el tablero por diseño, y hoy al menos conserva el canal en vivo). Confirmado que es específico de este caso: en un tablero válido la carga es limpia, con cero toasts y presencia de SignalR activa.
+
+**Alternativa descartada — emitir `ProjectDeleted` por SignalR para que la otra sesión salga en el momento:** es la solución completa y se descarta a conciencia, no por olvido. El §15.5 definió el alcance del canal de tiempo real como cuatro eventos de `Task`, que es lo que el enunciado pide reflejar en vivo (el tablero); el CRUD de proyectos nunca estuvo en ese canal. Ampliarlo obliga a tocar el outbox — la pieza que ya funciona y ya está probada — a dos días del cierre, y el sistema ya degrada de forma segura y explícita sin ello. Queda identificada y acotada como mejora, no como pendiente silencioso.
+
+### 27.3 La blocklist de JWT revocados crecía para siempre
+
+Encontrado al verificar el aislamiento de sesiones del §27.6: `TokenRevocationStore.RevokeAsync` persistía el `jti` con su `ExpiresAtUtc`, pero **nadie leía nunca ese campo**. `IsRevokedAsync` solo comprueba la existencia del `jti`, así que la tabla acumulaba una fila por logout, indefinidamente. Esas filas son inútiles pasado el `exp`: un JWT expirado ya lo rechaza la validación de firma, sin consultar la blocklist.
+
+**Decisión:** purga oportunista en `RevokeAsync` — un `ExecuteDeleteAsync` de las filas ya expiradas antes de insertar la nueva. Corre en la operación menos frecuente del sistema (un logout) y fuera del `SaveChanges` del Handler: si este falla, lo único perdido son filas que ya no protegían nada.
+
+**Alternativa descartada — un `BackgroundService` de purga periódica:** es la solución de libro y sería la correcta con volumen alto, pero aquí significa introducir un servicio hospedado, su intervalo, su manejo de fallos y su registro en DI para un problema que cabe en una consulta. Mismo criterio de no sobre-ingeniería que ya rige el resto del proyecto (§15.4, §26.8).
+
+### 27.4 Nombre de columna duplicado — hueco real, corrección descartada por costo/beneficio
+
+Verificado: dos columnas "Por hacer" en el mismo proyecto devuelven `201`, mientras que dos proyectos con el mismo nombre devuelven `409`. La inconsistencia es real — `CreateProjectCommandHandler` valida con `ExistsByNameAsync` y además tiene índice único filtrado por `NOT is_deleted` (§9), y `CreateColumnCommandHandler` no valida nada.
+
+**Decisión (tomada por Santiago tras presentarle el costo):** no implementarlo. Corregirlo bien exige repositorio + validación en el Handler + índice único `(project_id, name)` filtrado por `NOT is_deleted` + migración + tests, a dos días del cierre y con el video de sustentación pendiente. Sin unicidad, el perjuicio real es ambigüedad visual: dos columnas homónimas siguen siendo entidades distintas con `Id` propio, ninguna operación se vuelve ambigua para el sistema, y la inestabilidad de orden que sí era un bug quedó resuelta por separado en el §27.1.
+
+Se registra aquí para que la asimetría con `Project` sea una decisión consultable y no un descuido: el ámbito correcto sería `(project_id, name)` — no global, dos proyectos distintos deben poder tener su columna "Por hacer" — y el patrón a seguir es el que ya usa `Project`.
+
+### 27.5 Título de tarea duplicado — descartado por diseño, no por costo
+
+Santiago planteó la duda con dudas propias ("ni una tarea creería"), y acertó al dudar. **No debe validarse.** Títulos repetidos son semánticamente legítimos en un gestor de tareas: "Revisar PR" o "Actualizar dependencias" se repiten entre sprints y columnas. Ningún gestor de referencia (Jira, Trello, Linear, Asana) lo impide. La restricción bloquearía al usuario sin aportar integridad — la identidad de una tarea ya la da su `Id` — y en una revisión técnica se leería como sobre-restricción, no como rigor. Verificado que hoy devuelve `201` las dos veces, que es el comportamiento correcto.
+
+### 27.6 Dos sesiones simultáneas en el mismo navegador — comportamiento correcto, verificado
+
+Santiago observó que dos pestañas mantienen sesiones independientes y que cerrar una no cierra la otra, y preguntó si era criticable. No lo es, y se verificó en vez de suponerlo:
+
+```
+Pestaña A y B, mismo usuario, tokens distintos: SI
+antes del logout    -> A: 200   B: 200
+logout SOLO en A    -> 204
+después del logout  -> A: 401   B: 200
+```
+
+Es la consecuencia esperada de `sessionStorage` (§17), que el estándar aísla por contexto de navegación. Cada login emite un JWT con su propio `jti` y el logout revoca **solo ese** `jti` (§16) — que A pase a `401` demuestra que la revocación es real y no cosmética; que B siga viva es correcto, porque es otro token emitido por otro login. Cerrar sesión en un dispositivo no cierra los demás, igual que en cualquier aplicación real. Revocar todas las sesiones de un usuario es una funcionalidad distinta y explícita que el enunciado no pide.
+
+### 27.7 Verificación
+
+- `dotnet build GestionProyectos.sln`: sin errores ni warnings.
+- `dotnet test`: **170/170** — 155 unitarios y 15 de integración, con 4 nuevos: dos de `ColumnRepositoryTests` (orden estable con `Order` empatado, y que el desempate no pise el criterio principal) y dos de `TokenRevocationStoreTests` (la purga descarta los expirados **y conserva los vigentes** — una purga demasiado ancha desactivaría el logout entero). Los cuatro exigen Postgres real: `ExecuteDeleteAsync` no pasa por el `ChangeTracker` y el orden de un `ORDER BY` sin desempate lo decide el motor, no EF.
+- `ng test --watch=false`: **76/76**, con 2 nuevos sobre `loadBoard` — el `404` navega a `/projects` con aviso, y un `500` avisa sin mover al usuario.
+- **Verificación en navegador contra el stack real de `docker compose`**, no solo por specs (lección del §26.1), midiendo el DOM en vez de mirar la pantalla:
+  - Entrando a `/board/{id}` de un proyecto realmente borrado: la URL termina en `/projects`, el toast es `p-toast-message-warn` con "Proyecto no disponible / Este proyecto ya no existe. Puede que otra sesión lo haya eliminado.", y **no queda ningún tablero renderizado** (cero contenedores `cdkDropList`). El toast sigue visible después de la navegación, lo que confirma que el host raíz del §26.4 hace su trabajo.
+  - Contraste con un tablero válido: cero toasts, 4 columnas, 16 tarjetas y el indicador de presencia poblado — es decir, el aviso de tiempo real del caso anterior es específico del proyecto inexistente y **no** una regresión de SignalR.
