@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Common.Outbox;
 using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.MoveTask;
 using GestionProyectos.Domain.Common;
@@ -16,13 +17,14 @@ public class MoveTaskCommandHandlerTests
     private readonly ITaskRepository _taskRepository = Substitute.For<ITaskRepository>();
     private readonly IColumnRepository _columnRepository = Substitute.For<IColumnRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
-    private readonly IBoardNotifier _boardNotifier = Substitute.For<IBoardNotifier>();
+    private readonly IOutboxWriter _outboxWriter = Substitute.For<IOutboxWriter>();
+    private readonly IOutboxSignal _outboxSignal = Substitute.For<IOutboxSignal>();
 
     private static TaskEntity CreateTask(Guid columnId, string order) => new(
         Guid.NewGuid(), columnId, "Titulo", "Descripcion", TaskPriority.Low, null, order, DateTime.UtcNow);
 
     private MoveTaskCommandHandler CreateHandler() =>
-        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier, NullLogger<MoveTaskCommandHandler>.Instance);
+        new(_taskRepository, _columnRepository, _unitOfWork, _outboxWriter, _outboxSignal, NullLogger<MoveTaskCommandHandler>.Instance);
 
     [Fact]
     public async Task Handle_ReordenaDentroDeLaMismaColumna_QuedaEntreLosDosVecinos()
@@ -166,7 +168,11 @@ public class MoveTaskCommandHandlerTests
 
         await handler.Handle(new MoveTaskCommand(task.Id, targetColumn.Id, 0, "conn-1"), CancellationToken.None);
 
-        await _boardNotifier.Received(1).TaskMovedAsync(targetColumn.ProjectId, Arg.Any<TaskResponseDto>(), 0, "conn-1", Arg.Any<CancellationToken>());
+        _outboxWriter.Received(1).Enqueue(
+            OutboxEventTypes.TaskMoved,
+            targetColumn.ProjectId,
+            Arg.Is<TaskMovedOutboxPayload>(p => p.TargetIndex == 0),
+            "conn-1");
     }
 
     // ADR §15.2: dos sesiones moviendo la misma tarea al mismo tiempo -- la segunda debe
@@ -189,6 +195,10 @@ public class MoveTaskCommandHandlerTests
         Assert.False(result.IsSuccess);
         Assert.Equal(MoveTaskCommandHandler.ConcurrencyConflict, result.Error);
         Assert.Equal(ErrorType.Conflict, result.ErrorType);
-        await _boardNotifier.DidNotReceive().TaskMovedAsync(Arg.Any<Guid>(), Arg.Any<TaskResponseDto>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        // Enqueue puede haberse llamado antes del SaveChanges que fallo -- la atomicidad
+        // real la da la transaccion de BD (se revierte junto con el cambio de negocio), no
+        // el mock. Lo que sí debe ser verificable aqui es que jamas se avisa al dispatcher:
+        // Signal() solo se llama despues de un SaveChanges exitoso.
+        _outboxSignal.DidNotReceive().Signal();
     }
 }

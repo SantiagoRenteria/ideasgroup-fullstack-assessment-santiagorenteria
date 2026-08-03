@@ -19,6 +19,10 @@ public class AppDbContext : DbContext
     // docs/decisions/arquitectura-decisiones.md §16.
     internal DbSet<RevokedToken> RevokedTokens => Set<RevokedToken>();
 
+    // Registro tecnico del Outbox Pattern, no de Domain -- ver OutboxMessage y
+    // docs/decisions/arquitectura-decisiones.md §24.
+    internal DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Requerida por el indice GIN de coincidencia parcial en Project.Name (ver

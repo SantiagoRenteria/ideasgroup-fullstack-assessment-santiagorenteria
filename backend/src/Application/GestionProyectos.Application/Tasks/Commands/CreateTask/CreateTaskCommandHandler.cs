@@ -1,4 +1,5 @@
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Common.Outbox;
 using GestionProyectos.Domain.Common;
 using GestionProyectos.Domain.Entities;
 using MediatR;
@@ -13,20 +14,23 @@ public class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Resul
     private readonly IColumnRepository _columnRepository;
     private readonly ITaskRepository _taskRepository;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IBoardNotifier _boardNotifier;
+    private readonly IOutboxWriter _outboxWriter;
+    private readonly IOutboxSignal _outboxSignal;
     private readonly ILogger<CreateTaskCommandHandler> _logger;
 
     public CreateTaskCommandHandler(
         IColumnRepository columnRepository,
         ITaskRepository taskRepository,
         IUnitOfWork unitOfWork,
-        IBoardNotifier boardNotifier,
+        IOutboxWriter outboxWriter,
+        IOutboxSignal outboxSignal,
         ILogger<CreateTaskCommandHandler> logger)
     {
         _columnRepository = columnRepository;
         _taskRepository = taskRepository;
         _unitOfWork = unitOfWork;
-        _boardNotifier = boardNotifier;
+        _outboxWriter = outboxWriter;
+        _outboxSignal = outboxSignal;
         _logger = logger;
     }
 
@@ -56,10 +60,15 @@ public class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Resul
             DateTime.UtcNow);
 
         await _taskRepository.AddAsync(task, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var dto = task.ToDto();
-        await _boardNotifier.TaskCreatedAsync(column.ProjectId, dto, request.ConnectionId, cancellationToken);
+        // Encolado ANTES de SaveChanges: entra en la misma transaccion que la tarea nueva
+        // (ADR §24) -- si el proceso crashea despues, el evento queda pendiente en la BD,
+        // no perdido en memoria.
+        _outboxWriter.Enqueue(OutboxEventTypes.TaskCreated, column.ProjectId, dto, request.ConnectionId);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _outboxSignal.Signal();
 
         return Result<TaskResponseDto>.Success(dto);
     }

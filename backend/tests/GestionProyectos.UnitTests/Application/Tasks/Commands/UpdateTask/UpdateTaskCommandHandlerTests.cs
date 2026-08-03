@@ -1,5 +1,6 @@
 using GestionProyectos.Application.Common.Exceptions;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Common.Outbox;
 using GestionProyectos.Application.Tasks;
 using GestionProyectos.Application.Tasks.Commands.UpdateTask;
 using GestionProyectos.Domain.Common;
@@ -16,13 +17,14 @@ public class UpdateTaskCommandHandlerTests
     private readonly ITaskRepository _taskRepository = Substitute.For<ITaskRepository>();
     private readonly IColumnRepository _columnRepository = Substitute.For<IColumnRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
-    private readonly IBoardNotifier _boardNotifier = Substitute.For<IBoardNotifier>();
+    private readonly IOutboxWriter _outboxWriter = Substitute.For<IOutboxWriter>();
+    private readonly IOutboxSignal _outboxSignal = Substitute.For<IOutboxSignal>();
 
     private static TaskEntity CreateTask() => new(
         Guid.NewGuid(), Guid.NewGuid(), "Titulo", "Descripcion", TaskPriority.Low, null, "m", DateTime.UtcNow);
 
     private UpdateTaskCommandHandler CreateHandler() =>
-        new(_taskRepository, _columnRepository, _unitOfWork, _boardNotifier, NullLogger<UpdateTaskCommandHandler>.Instance);
+        new(_taskRepository, _columnRepository, _unitOfWork, _outboxWriter, _outboxSignal, NullLogger<UpdateTaskCommandHandler>.Instance);
 
     [Fact]
     public async Task Handle_TareaExiste_ActualizaCamposYPersisteCambios()
@@ -75,7 +77,7 @@ public class UpdateTaskCommandHandlerTests
 
         await handler.Handle(command, CancellationToken.None);
 
-        await _boardNotifier.Received(1).TaskUpdatedAsync(column.ProjectId, Arg.Any<TaskResponseDto>(), "conn-1", Arg.Any<CancellationToken>());
+        _outboxWriter.Received(1).Enqueue(OutboxEventTypes.TaskUpdated, column.ProjectId, Arg.Any<TaskResponseDto>(), "conn-1");
     }
 
     // ADR §15.2: dos sesiones editando la misma tarea al mismo tiempo -- la segunda en
@@ -97,6 +99,9 @@ public class UpdateTaskCommandHandlerTests
         Assert.False(result.IsSuccess);
         Assert.Equal(UpdateTaskCommandHandler.ConcurrencyConflict, result.Error);
         Assert.Equal(ErrorType.Conflict, result.ErrorType);
-        await _boardNotifier.DidNotReceive().TaskUpdatedAsync(Arg.Any<Guid>(), Arg.Any<TaskResponseDto>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        // La garantia real es que nunca se avisa al dispatcher tras un conflicto: Signal()
+        // solo se llama despues de un SaveChanges exitoso (ver mismo razonamiento en
+        // MoveTaskCommandHandlerTests).
+        _outboxSignal.DidNotReceive().Signal();
     }
 }

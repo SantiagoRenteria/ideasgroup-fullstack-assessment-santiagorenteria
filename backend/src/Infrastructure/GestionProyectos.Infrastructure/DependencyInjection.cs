@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using GestionProyectos.Application.Common.Interfaces;
+using GestionProyectos.Application.Common.Outbox;
 using GestionProyectos.Infrastructure.Persistence;
 using GestionProyectos.Infrastructure.Realtime;
 using GestionProyectos.Infrastructure.Repositories;
@@ -55,6 +56,13 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IBoardNotifier, SignalRBoardNotifier>();
+        services.AddScoped<IOutboxWriter, OutboxWriter>();
+        services.AddScoped<OutboxProcessor>();
+        // Singleton unico: BackgroundService, IOutboxSignal (senal in-process) y el
+        // registro de IHostedService deben resolver la MISMA instancia -- ver ADR §24.
+        services.AddSingleton<OutboxDispatcher>();
+        services.AddSingleton<IOutboxSignal>(sp => sp.GetRequiredService<OutboxDispatcher>());
+        services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(sp => sp.GetRequiredService<OutboxDispatcher>());
         // Singleton a proposito: el estado de presencia debe sobrevivir entre conexiones
         // distintas del mismo proceso (ver BoardPresenceTracker sobre el limite de una
         // sola instancia, sin backplane distribuido).

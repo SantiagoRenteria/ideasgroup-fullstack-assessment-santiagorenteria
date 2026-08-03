@@ -39,6 +39,15 @@ erDiagram
         varchar jti PK
         timestamptz expires_at_utc
     }
+    outbox_messages {
+        uuid id PK
+        varchar type
+        uuid project_id
+        text payload
+        varchar exclude_connection_id
+        timestamptz created_at_utc
+        timestamptz processed_at_utc
+    }
 
     projects ||--o{ columns : tiene
     columns ||--o{ tasks : contiene

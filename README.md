@@ -2,7 +2,7 @@
 
 Aplicativo web para la gestión de proyectos ágiles: proyectos, columnas configurables y tablero kanban con tiempo real, sobre .NET 8 (arquitectura hexagonal) + Angular 17 (PrimeNG/Sakai) + PostgreSQL.
 
-> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-02, al cierre de los obligatorios de la Fase 6.
+> Documento vivo, se actualiza en paralelo al desarrollo (no se escribe al final). Última actualización: 2026-08-03, al cierre de la auditoría crítica post-entrega (§20-§24 del ADR).
 
 ---
 
@@ -136,13 +136,23 @@ El detalle completo de cada decisión, sus alternativas evaluadas y por qué se 
 - Diseño de Tiempo Real (§15): puerto `IBoardNotifier` en Application con adaptador SignalR en Infrastructure (no en API), concurrencia optimista con `xmin` materializada en esta fase, exclusión del propio emisor al notificar, y conexión con alcance de componente en el frontend.
 - Cierre de sesión con revocación real de JWT (§16): blocklist de tokens por `jti` (`POST /api/auth/logout` + `JwtBearerEvents.OnTokenValidated`), verificada en `revoked_tokens` — no exigido por el enunciado, decisión tomada al agregar el nombre del usuario y el botón de logout al nav.
 
+**Auditoría crítica post-entrega (§20-§24, proyecto ya completo):** revisión propia con criterio de evaluador senior sobre el proyecto ya funcional, que cerró 5 hallazgos priorizados de más sencillo a más difícil, cada uno en su propia rama con PR e issue:
+
+- `Result`/`Result<T>` exige `ErrorType` tipado en vez de mapear HTTP status por contenido de mensaje (§20).
+- `LoggingBehavior` transversal para MediatR, sin loguear el payload del request (§21).
+- Value Objects `Email`/`DateRange`/`LexoRankKey`, y `Project`/`Column`/`TaskEntity` documentados explícitamente como tres agregados independientes — con la alternativa de un solo agregado evaluada y descartada por riesgo de falsos conflictos de concurrencia en edición simultánea (§22).
+- Tests de integración con Testcontainers contra Postgres real, cerrando verificaciones que antes solo se habían hecho "a mano" (§23).
+- Outbox Pattern para la notificación del tablero, con Domain Events y RabbitMQ evaluados y descartados con motivo concreto en cada caso (§24).
+
 ---
 
 ## 6. Tiempo real
 
 **SignalR**, con un grupo por tablero (`board-{proyectoId}`) y canal autenticado con el mismo JWT de sesión de la API REST. Alternativas descartadas (WebSocket crudo, SSE) y justificación de la elección de tecnología: ADR §1 y §2.
 
-**Arquitectura**: `IBoardNotifier` es un puerto en `Application`; el adaptador (`SignalRBoardNotifier` + `BoardHub`, ambos usando `IHubContext<BoardHub>`) vive en `Infrastructure`, junto al resto de adaptadores externos (EF Core, JWT) — nunca en `API`, que solo mapea la ruta del hub (`/hubs/board`). Los cuatro Command Handlers de Tareas (Create/Update/Delete/Move) dependen únicamente del puerto, sin conocer SignalR.
+**Arquitectura**: `IBoardNotifier` es un puerto en `Application`; el adaptador (`SignalRBoardNotifier` + `BoardHub`, ambos usando `IHubContext<BoardHub>`) vive en `Infrastructure`, junto al resto de adaptadores externos (EF Core, JWT) — nunca en `API`, que solo mapea la ruta del hub (`/hubs/board`).
+
+**Consistencia de la notificación (Outbox Pattern, auditoría post-entrega — ADR §24):** los cuatro Command Handlers de Tareas (Create/Update/Delete/Move) ya **no** llaman a `IBoardNotifier` directamente — encolan el evento (`IOutboxWriter.Enqueue`) en la misma transacción que el cambio de negocio, antes de `SaveChangesAsync`. `OutboxProcessor` (Infrastructure) reclama los pendientes con `SELECT ... FOR UPDATE SKIP LOCKED` y recién ahí llama a `IBoardNotifier`; `OutboxDispatcher` (`BackgroundService`) orquesta el ciclo con polling cada 1s + una señal in-process para despachar casi al instante tras un guardado exitoso. Esto cierra el hueco donde un crash entre el commit y la notificación por SignalR dejaba el cambio persistido pero a otras sesiones sin enterarse.
 
 **Autenticación del canal**: el cliente Angular no puede fijar el header `Authorization` en el handshake de WebSocket, así que el JWT se envía como query string (`access_token`) solo para rutas `/hubs/*`; el resto de la API sigue exigiendo el header Bearer normal (`JwtBearerEvents.OnMessageReceived` en `Infrastructure/DependencyInjection.cs`).
 
@@ -178,7 +188,7 @@ Detalle completo, incluida la justificación de por qué la consulta arranca des
 
 ![Diagrama entidad-relación](docs/diagrams/erd.png)
 
-Generado por introspección directa de `information_schema` contra el Postgres real levantado con `docker compose` (no a mano ni desde memoria del código) — columnas, tipos, claves primarias/foráneas e índices únicos consultados con SQL, volcados a `docs/diagrams/erd.mmd` (Mermaid ER) y renderizados a PNG con `@mermaid-js/mermaid-cli`. `revoked_tokens` es la única tabla sin relación con el resto: blocklist de JWT (§16 del ADR), no forma parte del modelo de dominio de la sección 5 del enunciado, pero es una tabla real de las migraciones y se incluye por fidelidad al esquema.
+Generado por introspección directa de `information_schema` contra el Postgres real levantado con `docker compose` (no a mano ni desde memoria del código) — columnas, tipos, claves primarias/foráneas e índices únicos consultados con SQL, volcados a `docs/diagrams/erd.mmd` (Mermaid ER) y renderizados a PNG con `@mermaid-js/mermaid-cli`. `revoked_tokens` y `outbox_messages` son las dos tablas sin relación con el resto: blocklist de JWT (§16 del ADR) y registro técnico del Outbox Pattern (§24 del ADR) respectivamente — ninguna forma parte del modelo de dominio de la sección 5 del enunciado, pero ambas son tablas reales de las migraciones y se incluyen por fidelidad al esquema.
 
 Migraciones incrementales que generan este esquema: `backend/src/Infrastructure/GestionProyectos.Infrastructure/Persistence/Migrations/`.
 
@@ -189,7 +199,7 @@ Migraciones incrementales que generan este esquema: `backend/src/Infrastructure/
 | Capa | Cantidad | Cobertura |
 |---|---|---|
 | Backend unitario (xUnit) | 155 | Domain (entidades, Value Objects `Email`/`DateRange`/`LexoRankKey`, soft-delete, `LexoRankService`), Application (handlers CQRS con NSubstitute, incluida la regla "no borrar con tareas", el rebalanceo de `MoveTaskCommandHandler`, la notificación por tiempo real con exclusión del emisor, el conflicto de concurrencia `xmin`, la revocación de tokens en `LogoutCommandHandler`, `ExportProjectReportQueryHandler` y el `LoggingBehavior` transversal), Infrastructure (BCrypt, JWT, `QuestPdfReportExporter` y `ClosedXmlReportExporter` releyendo el archivo generado) |
-| Backend integración (xUnit + Testcontainers) | 7 | Contra PostgreSQL real, no mocks — ver más abajo |
+| Backend integración (xUnit + Testcontainers) | 11 | Contra PostgreSQL real, no mocks — ver más abajo |
 | Frontend (Jasmine/Karma) | 62 | `ProjectService`, `ColumnService`, `TaskService` (incluido el header `X-Realtime-Connection-Id`), `BoardService`, `UserService`, `RealtimeBoardService`, `ReportService`, `AuthService` (revocación en logout), `AuthInterceptor`, `ProjectFormComponent`, `AppTopBarComponent`, `BoardComponent` (reordenamiento optimista y reversión, aplicación de los cuatro eventos remotos de tiempo real, y descarga de reportes) |
 
 Mínimo exigido por el enunciado (sección 6.9): 5 backend + 5 frontend. Superado en ambas capas.
@@ -203,6 +213,7 @@ Los tests unitarios mockean todos los repositorios — nunca ejercitan el modelo
 - **`ProjectReportRepositoryTests`**: el `LEFT JOIN` encadenado del reporte (sección 6.8) distingue correctamente "proyecto sin tareas" (1 fila, campos de tarea en `null`) de "proyecto inexistente" (`null`) — ver `docs/decisions/arquitectura-decisiones.md` §18.2.
 - **`TaskConcurrencyTests`**: el conflicto de concurrencia optimista vía `xmin` (§15.2) ocurre de verdad cuando dos sesiones modifican la misma tarea, y **no** ocurre entre tareas distintas del mismo proyecto — la razón concreta por la que este proyecto usa un token de concurrencia por tarea y no uno solo por proyecto (§22.3).
 - **`ProjectRepositoryTests`**: el filtro de coincidencia parcial insensible a mayúsculas (sección 6.3, `EF.Functions.ILike` + índice GIN `pg_trgm`) funciona contra Postgres real — un provider en memoria no tiene la extensión `pg_trgm`.
+- **`OutboxProcessorTests`**: la atomicidad real de `Enqueue` + `SaveChanges` (misma transacción que el cambio de negocio), y que `OutboxProcessor.ProcessPendingAsync` reclama, marca procesado y despacha correctamente sin reprocesar — ver `docs/decisions/arquitectura-decisiones.md` §24.
 
 **Requiere Docker** corriendo (usa el socket de Docker para levantar el contenedor). Correr solo estos tests:
 
