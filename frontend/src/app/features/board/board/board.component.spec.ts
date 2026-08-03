@@ -1,7 +1,8 @@
 import { CdkDragDrop } from '@angular/cdk/drag-drop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { Subject, of, throwError } from 'rxjs';
 import { AppUser } from '../models/app-user.model';
@@ -21,6 +22,7 @@ describe('BoardComponent', () => {
     let taskService: jasmine.SpyObj<TaskService>;
     let reportService: jasmine.SpyObj<ReportService>;
     let userService: jasmine.SpyObj<UserService>;
+    let router: jasmine.SpyObj<Router>;
     let taskCreated$: Subject<BoardTask>;
     let taskUpdated$: Subject<BoardTask>;
     let taskDeleted$: Subject<TaskDeletedPayload>;
@@ -53,6 +55,7 @@ describe('BoardComponent', () => {
         taskService = jasmine.createSpyObj('TaskService', ['move', 'delete']);
         reportService = jasmine.createSpyObj('ReportService', ['download']);
         userService = jasmine.createSpyObj('UserService', ['listAll']);
+        router = jasmine.createSpyObj('Router', ['navigate']);
         boardService.getByProject.and.returnValue(of(buildBoard()));
         userService.listAll.and.returnValue(of([]));
 
@@ -82,6 +85,7 @@ describe('BoardComponent', () => {
                 { provide: UserService, useValue: userService },
                 { provide: RealtimeBoardService, useValue: realtimeService },
                 { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ projectId: 'proj-1' }) } } },
+                { provide: Router, useValue: router },
                 ConfirmationService,
                 MessageService
             ],
@@ -118,6 +122,36 @@ describe('BoardComponent', () => {
 
         expect(boardService.getByProject).toHaveBeenCalledWith('proj-1');
         expect(component.board?.columns.length).toBe(2);
+    });
+
+    it('loadBoard saca al usuario del tablero si el proyecto ya no existe (404), sin dejarlo en una vista fantasma', () => {
+        // Otra sesion borro el proyecto mientras esta lo tenia abierto: las columnas que
+        // quedarian en pantalla ya rechazan toda mutacion con 404 (ver ADR §27.2).
+        boardService.getByProject.and.returnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+        // Mismo comentario que en downloadReport: instancia unica provista por TestBed.
+        const messageService = fixture.debugElement.injector.get(MessageService);
+        spyOn(messageService, 'add');
+
+        fixture.detectChanges();
+
+        expect(component.board).toBeNull();
+        expect(component.loading).toBeFalse();
+        expect(router.navigate).toHaveBeenCalledWith(['/projects']);
+        expect(messageService.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'warn' }));
+    });
+
+    it('loadBoard ante un error que no es 404 avisa pero deja al usuario donde esta', () => {
+        // Un 500 o una caida de red son transitorios: expulsar al usuario del tablero seria
+        // peor que dejarlo reintentar.
+        boardService.getByProject.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        const messageService = fixture.debugElement.injector.get(MessageService);
+        spyOn(messageService, 'add');
+
+        fixture.detectChanges();
+
+        expect(component.loading).toBeFalse();
+        expect(router.navigate).not.toHaveBeenCalled();
+        expect(messageService.add).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'error' }));
     });
 
     it('onDrop reordena dentro de la misma columna de forma optimista y llama a TaskService.move', () => {

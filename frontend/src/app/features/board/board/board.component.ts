@@ -1,6 +1,7 @@
 import { CdkDragDrop, moveItemInArray, transferArrayItem } from '@angular/cdk/drag-drop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { Subscription } from 'rxjs';
 import { AppUser } from '../models/app-user.model';
@@ -41,6 +42,7 @@ export class BoardComponent implements OnInit, OnDestroy {
 
     constructor(
         private route: ActivatedRoute,
+        private router: Router,
         private boardService: BoardService,
         private taskService: TaskService,
         private reportService: ReportService,
@@ -135,8 +137,24 @@ export class BoardComponent implements OnInit, OnDestroy {
                 this.board = board;
                 this.loading = false;
             },
-            error: () => {
+            // Un 404 aqui no es un fallo generico: el proyecto dejo de existir mientras esta
+            // sesion lo tenia abierto (otra sesion lo borro, ver ADR §27.2). Sin salida
+            // explicita el usuario se queda mirando un tablero fantasma, con columnas que ya
+            // rechazan toda mutacion. El toast sobrevive a la navegacion porque p-toast vive
+            // en el host raiz, fuera del router-outlet (§26.4).
+            error: (err: HttpErrorResponse) => {
                 this.loading = false;
+
+                if (err.status === 404) {
+                    this.messageService.add({
+                        severity: 'warn',
+                        summary: 'Proyecto no disponible',
+                        detail: 'Este proyecto ya no existe. Puede que otra sesión lo haya eliminado.'
+                    });
+                    this.router.navigate(['/projects']);
+                    return;
+                }
+
                 this.messageService.add({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar el tablero' });
             }
         });
